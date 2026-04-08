@@ -1,0 +1,71 @@
+{
+  "recall": {
+    "vanilla": {
+      "params": 438656,
+      "best_val_loss": 2.6383851356506347,
+      "final_val_loss": 2.6918009147644044,
+      "final_val_acc": 0.195,
+      "time": 13.558599948883057
+    },
+    "hopfield": {
+      "params": 438659,
+      "best_val_loss": 2.5894140872955322,
+      "final_val_loss": 2.597709260940552,
+      "final_val_acc": 0.204,
+      "time": 22.76017689704895
+    },
+    "augmented": {
+      "params": 551555,
+      "best_val_loss": 2.5746527729034425,
+      "final_val_loss": 2.575299715042114,
+      "final_val_acc": 0.211,
+      "time": 22.91414189338684
+    }
+  },
+  "copy": {
+    "vanilla": {
+      "params": 438656,
+      "best_val_loss": 4.230516467414559,
+      "final_val_loss": 4.256503717093031,
+      "final_val_acc": 0.01808355851174392,
+      "time": 13.69527792930603
+    },
+    "hopfield": {
+      "params": 438659,
+      "best_val_loss": 3.9897241110713484,
+      "final_val_loss": 4.013592815379347,
+      "final_val_acc": 0.013718561629598836,
+      "time": 26.35256838798523
+    },
+    "augmented": {
+      "params": 551555,
+      "best_val_loss": 3.704501335795816,
+      "final_val_loss": 3.7045345905044673,
+      "final_val_acc": 0.017252130534192476,
+      "time": 27.799784421920776
+    }
+  },
+  "lm": {
+    "vanilla": {
+      "params": 438656,
+      "best_val_loss": 1.8327540187835694,
+      "final_val_loss": 1.8327540187835694,
+      "final_val_acc": null,
+      "time": 14.579624652862549
+    },
+    "hopfield": {
+      "params": 438659,
+      "best_val_loss": 2.708788537979126,
+      "final_val_loss": 2.7102415733337404,
+      "final_val_acc": null,
+      "time": 27.13529896736145
+    },
+    "augmented": {
+      "params": 551555,
+      "best_val_loss": 0.0621047083735466,
+      "final_val_loss": 0.0621047083735466,
+      "final_val_acc": null,
+      "time": 27.741979122161865
+    }
+  }
+}
