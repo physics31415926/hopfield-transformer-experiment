@@ -398,13 +398,13 @@ def main():
         print_summary(results, 'lm')
         all_results['lm'] = results
 
-    # Save results
+    # Save results (including history for training curves)
     save_results = {}
     for exp_name, exp_results in all_results.items():
         save_results[exp_name] = {}
         for mode, r in exp_results.items():
             save_results[exp_name][mode] = {
-                k: v for k, v in r.items() if k != 'history'
+                k: v for k, v in r.items()
             }
 
     os.makedirs('results', exist_ok=True)

@@ -1,106 +1,360 @@
 """
-Visualization: plot experiment results as comparison charts.
-Generates PNG figures for each experiment.
+Visualization for Hopfield-Enhanced Transformer experiments.
+Generates publication-quality comparison charts with training curves.
 """
 
 import json
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import numpy as np
 import os
+import argparse
+
+# Style config
+plt.rcParams.update({
+    'font.family': 'DejaVu Sans',
+    'font.size': 11,
+    'axes.titlesize': 13,
+    'axes.labelsize': 11,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+    'legend.fontsize': 10,
+    'figure.dpi': 150,
+    'savefig.bbox': 'tight',
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+})
+
+COLORS = {
+    'vanilla': '#5B8DB8',
+    'hopfield': '#E07B54',
+    'augmented': '#6AAF6A',
+}
+LABELS = {
+    'vanilla': 'Vanilla Transformer',
+    'hopfield': 'Hopfield Attention (T-step)',
+    'augmented': 'Hopfield + Memory Bank',
+}
+EXP_TITLES = {
+    'recall': 'Associative Recall',
+    'copy': 'Noisy Copy (Pattern Completion)',
+    'lm': 'Structured Sequence LM',
+}
 
 
-def plot_experiment_results(results_path='results/experiment_results.json',
-                            output_dir='results'):
+def plot_training_curves(results_path, output_dir='results'):
+    """Plot training & validation loss/accuracy curves for each experiment."""
     with open(results_path) as f:
         results = json.load(f)
 
     os.makedirs(output_dir, exist_ok=True)
-    colors = {'vanilla': '#4C72B0', 'hopfield': '#DD8452', 'augmented': '#55A868'}
-    labels = {'vanilla': 'Vanilla Transformer', 'hopfield': 'Hopfield Attention', 'augmented': 'Hopfield + Memory'}
 
     for exp_name, exp_data in results.items():
         modes = list(exp_data.keys())
+        has_acc = any(
+            exp_data[m].get('history', {}).get('val_acc') and
+            any(v > 0 for v in exp_data[m]['history']['val_acc'])
+            for m in modes
+        )
+        has_history = any('history' in exp_data[m] for m in modes)
+        if not has_history:
+            continue
 
-        # --- Bar chart: final metrics ---
-        fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
-        fig.suptitle(f'Experiment: {exp_name}', fontsize=14, fontweight='bold')
+        ncols = 3 if has_acc else 2
+        fig, axes = plt.subplots(1, ncols, figsize=(5.5 * ncols, 4.5))
+        title = EXP_TITLES.get(exp_name, exp_name)
+        fig.suptitle(title, fontsize=15, fontweight='bold', y=1.02)
 
-        # Final loss
-        ax = axes[0]
-        vals = [exp_data[m].get('final_loss', 0) for m in modes]
-        bars = ax.bar(modes, vals, color=[colors[m] for m in modes])
-        ax.set_title('Final Loss')
-        ax.set_ylabel('Loss')
-        for bar, v in zip(bars, vals):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                    f'{v:.4f}', ha='center', va='bottom', fontsize=9)
+        for mode in modes:
+            h = exp_data[mode].get('history', {})
+            if not h:
+                continue
+            epochs = list(range(1, len(h['train_loss']) + 1))
+            c = COLORS.get(mode, '#999')
+            label = LABELS.get(mode, mode)
 
-        # Final accuracy
-        ax = axes[1]
-        vals = [exp_data[m].get('final_acc', 0) * 100 for m in modes]
-        bars = ax.bar(modes, vals, color=[colors[m] for m in modes])
-        ax.set_title('Final Accuracy (%)')
-        ax.set_ylabel('Accuracy (%)')
-        for bar, v in zip(bars, vals):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
-                    f'{v:.1f}%', ha='center', va='bottom', fontsize=9)
+            # Train loss
+            axes[0].plot(epochs, h['train_loss'], color=c, label=label,
+                        linewidth=2, alpha=0.9)
+            # Val loss
+            axes[1].plot(epochs, h['val_loss'], color=c, label=label,
+                        linewidth=2, linestyle='--', marker='o', markersize=3)
 
-        # Parameters
-        ax = axes[2]
-        vals = [exp_data[m].get('params', 0) for m in modes]
-        bars = ax.bar(modes, vals, color=[colors[m] for m in modes])
-        ax.set_title('Parameter Count')
-        ax.set_ylabel('Parameters')
-        for bar, v in zip(bars, vals):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 100,
-                    f'{v:,}', ha='center', va='bottom', fontsize=9)
+            if has_acc and ncols == 3:
+                axes[2].plot(epochs, [a * 100 for a in h['val_acc']],
+                           color=c, label=label, linewidth=2,
+                           marker='o', markersize=3)
+
+        axes[0].set_title('Training Loss')
+        axes[0].set_xlabel('Epoch')
+        axes[0].set_ylabel('Loss')
+        axes[0].legend(frameon=False)
+        axes[0].grid(True, alpha=0.3)
+
+        axes[1].set_title('Validation Loss')
+        axes[1].set_xlabel('Epoch')
+        axes[1].set_ylabel('Loss')
+        axes[1].legend(frameon=False)
+        axes[1].grid(True, alpha=0.3)
+
+        if has_acc and ncols == 3:
+            axes[2].set_title('Validation Accuracy')
+            axes[2].set_xlabel('Epoch')
+            axes[2].set_ylabel('Accuracy (%)')
+            axes[2].legend(frameon=False)
+            axes[2].grid(True, alpha=0.3)
 
         plt.tight_layout()
-        fig.savefig(os.path.join(output_dir, f'{exp_name}_comparison.png'), dpi=150, bbox_inches='tight')
+        path = os.path.join(output_dir, f'{exp_name}_curves.png')
+        fig.savefig(path, dpi=150)
         plt.close(fig)
-        print(f'Saved {exp_name}_comparison.png')
+        print(f'Saved {path}')
 
-    # --- Combined summary table ---
-    fig, ax = plt.subplots(figsize=(10, 3 + len(results) * 1.2))
-    ax.axis('off')
 
-    table_data = []
-    headers = ['Experiment', 'Model', 'Loss', 'Accuracy', 'Params', 'Time (s)']
+def plot_bar_comparison(results_path, output_dir='results'):
+    """Bar charts comparing final metrics across models."""
+    with open(results_path) as f:
+        results = json.load(f)
+
+    os.makedirs(output_dir, exist_ok=True)
 
     for exp_name, exp_data in results.items():
-        for mode in exp_data:
-            d = exp_data[mode]
-            table_data.append([
-                exp_name,
-                labels.get(mode, mode),
-                f"{d.get('final_loss', 0):.4f}",
-                f"{d.get('final_acc', 0)*100:.1f}%",
-                f"{d.get('params', 0):,}",
-                f"{d.get('train_time', 0):.1f}",
-            ])
+        modes = list(exp_data.keys())
+        has_acc = any(exp_data[m].get('final_val_acc') is not None for m in modes)
 
-    table = ax.table(cellText=table_data, colLabels=headers, loc='center',
-                     cellLoc='center', colColours=['#f0f0f0']*len(headers))
-    table.auto_set_font_size(False)
-    table.set_fontsize(10)
-    table.scale(1.2, 1.5)
+        ncols = 3 if has_acc else 2
+        fig, axes = plt.subplots(1, ncols, figsize=(4.5 * ncols, 4))
+        title = EXP_TITLES.get(exp_name, exp_name)
+        fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
 
-    # Color rows by model type
-    for i, row in enumerate(table_data):
-        mode_key = [k for k, v in labels.items() if v == row[1]]
-        if mode_key:
-            color = colors[mode_key[0]] + '30'  # light version
-        for j in range(len(headers)):
-            table[i+1, j].set_facecolor('#ffffff')
+        x = np.arange(len(modes))
+        width = 0.55
+        colors = [COLORS.get(m, '#999') for m in modes]
+        xlabels = [LABELS.get(m, m) for m in modes]
 
-    fig.suptitle('Hopfield-Enhanced Transformer: Experiment Summary', fontsize=13, fontweight='bold')
+        # Best val loss
+        ax = axes[0]
+        vals = [exp_data[m].get('best_val_loss', 0) for m in modes]
+        bars = ax.bar(x, vals, width, color=colors, edgecolor='white', linewidth=0.5)
+        ax.set_title('Best Validation Loss', fontweight='bold')
+        ax.set_ylabel('Loss')
+        ax.set_xticks(x)
+        ax.set_xticklabels(xlabels, rotation=15, ha='right', fontsize=9)
+        for bar, v in zip(bars, vals):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                    f'{v:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+        ax.grid(True, axis='y', alpha=0.3)
+        # Highlight best
+        best_idx = np.argmin(vals)
+        bars[best_idx].set_edgecolor('#333')
+        bars[best_idx].set_linewidth(2)
+
+        # Training time
+        ax = axes[1]
+        vals = [exp_data[m].get('time', 0) for m in modes]
+        bars = ax.bar(x, vals, width, color=colors, edgecolor='white', linewidth=0.5)
+        ax.set_title('Training Time', fontweight='bold')
+        ax.set_ylabel('Seconds')
+        ax.set_xticks(x)
+        ax.set_xticklabels(xlabels, rotation=15, ha='right', fontsize=9)
+        for bar, v in zip(bars, vals):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                    f'{v:.1f}s', ha='center', va='bottom', fontsize=9, fontweight='bold')
+        ax.grid(True, axis='y', alpha=0.3)
+
+        # Accuracy (if applicable)
+        if has_acc and ncols == 3:
+            ax = axes[2]
+            vals = [(exp_data[m].get('final_val_acc') or 0) * 100 for m in modes]
+            bars = ax.bar(x, vals, width, color=colors, edgecolor='white', linewidth=0.5)
+            ax.set_title('Final Val Accuracy', fontweight='bold')
+            ax.set_ylabel('Accuracy (%)')
+            ax.set_xticks(x)
+            ax.set_xticklabels(xlabels, rotation=15, ha='right', fontsize=9)
+            for bar, v in zip(bars, vals):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                        f'{v:.1f}%', ha='center', va='bottom', fontsize=9, fontweight='bold')
+            ax.grid(True, axis='y', alpha=0.3)
+
+        plt.tight_layout()
+        path = os.path.join(output_dir, f'{exp_name}_comparison.png')
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        print(f'Saved {path}')
+
+
+def plot_summary(results_path, output_dir='results'):
+    """Single summary figure with all experiments."""
+    with open(results_path) as f:
+        results = json.load(f)
+
+    os.makedirs(output_dir, exist_ok=True)
+    exp_names = list(results.keys())
+    modes = list(results[exp_names[0]].keys())
+    n_exp = len(exp_names)
+
+    fig, axes = plt.subplots(1, n_exp, figsize=(5 * n_exp, 4.5))
+    if n_exp == 1:
+        axes = [axes]
+
+    fig.suptitle('Hopfield-Enhanced Transformer: All Experiments',
+                 fontsize=14, fontweight='bold', y=1.03)
+
+    for i, exp_name in enumerate(exp_names):
+        ax = axes[i]
+        exp_data = results[exp_name]
+        x = np.arange(len(modes))
+        vals = [exp_data[m].get('best_val_loss', 0) for m in modes]
+        colors = [COLORS.get(m, '#999') for m in modes]
+        xlabels = [LABELS.get(m, m) for m in modes]
+
+        bars = ax.bar(x, vals, 0.55, color=colors, edgecolor='white')
+        ax.set_title(EXP_TITLES.get(exp_name, exp_name), fontweight='bold')
+        ax.set_ylabel('Best Val Loss')
+        ax.set_xticks(x)
+        ax.set_xticklabels(xlabels, rotation=20, ha='right', fontsize=8)
+        for bar, v in zip(bars, vals):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                    f'{v:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+        ax.grid(True, axis='y', alpha=0.3)
+
+        best_idx = np.argmin(vals)
+        bars[best_idx].set_edgecolor('#333')
+        bars[best_idx].set_linewidth(2)
+
     plt.tight_layout()
-    fig.savefig(os.path.join(output_dir, 'summary_table.png'), dpi=150, bbox_inches='tight')
+    path = os.path.join(output_dir, 'summary_all.png')
+    fig.savefig(path, dpi=150)
     plt.close(fig)
-    print('Saved summary_table.png')
+    print(f'Saved {path}')
+
+
+def plot_ablation(results_path, output_dir='results'):
+    """Plot ablation study results from run_ablation.py output."""
+    with open(results_path) as f:
+        results = json.load(f)
+
+    os.makedirs(output_dir, exist_ok=True)
+    exp_names = list(results.keys())
+
+    # Separate by mode (hopfield vs augmented)
+    mode_colors = {
+        'hopfield': ('#E07B54', '#C4613A'),
+        'augmented': ('#6AAF6A', '#4E8F4E'),
+    }
+    mode_labels = {
+        'hopfield': 'Hopfield Attention',
+        'augmented': 'Hopfield + Memory',
+    }
+
+    for exp_name in exp_names:
+        exp_data = results[exp_name]
+
+        # Group by mode
+        grouped = {}
+        for key, val in exp_data.items():
+            mode = val.get('mode', key.split('_T')[0])
+            T = val.get('hopfield_steps', int(key.split('_T')[1]))
+            if mode not in grouped:
+                grouped[mode] = []
+            grouped[mode].append((T, val))
+
+        n_modes = len(grouped)
+        fig, axes = plt.subplots(1, n_modes, figsize=(6 * n_modes, 5))
+        if n_modes == 1:
+            axes = [axes]
+
+        title = EXP_TITLES.get(exp_name, exp_name)
+        fig.suptitle(f'Ablation: Hopfield Steps — {title}',
+                     fontsize=14, fontweight='bold', y=1.03)
+
+        for idx, (mode, entries) in enumerate(sorted(grouped.items())):
+            ax = axes[idx]
+            entries.sort(key=lambda x: x[0])
+            steps = [e[0] for e in entries]
+            losses = [e[1]['best_val_loss'] for e in entries]
+
+            x = np.arange(len(steps))
+            base_color = mode_colors.get(mode, ('#999', '#777'))
+            colors_grad = plt.cm.YlOrRd(np.linspace(0.25, 0.85, len(steps)))
+
+            bars = ax.bar(x, losses, 0.5, color=colors_grad, edgecolor='white')
+            ax.set_title(mode_labels.get(mode, mode), fontweight='bold')
+            ax.set_xlabel('Hopfield Steps (T)')
+            ax.set_ylabel('Best Val Loss')
+            ax.set_xticks(x)
+            ax.set_xticklabels([f'T={s}' for s in steps])
+            for bar, v in zip(bars, losses):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                        f'{v:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+            ax.grid(True, axis='y', alpha=0.3)
+
+            best_idx = np.argmin(losses)
+            bars[best_idx].set_edgecolor('#333')
+            bars[best_idx].set_linewidth(2)
+
+        plt.tight_layout()
+        path = os.path.join(output_dir, f'ablation_{exp_name}.png')
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        print(f'Saved {path}')
+
+    # Also plot combined line chart: all experiments, loss vs T
+    fig, axes = plt.subplots(1, len(exp_names), figsize=(5.5 * len(exp_names), 4.5))
+    if len(exp_names) == 1:
+        axes = [axes]
+
+    fig.suptitle('Ablation: Best Val Loss vs Hopfield Steps',
+                 fontsize=14, fontweight='bold', y=1.03)
+
+    for i, exp_name in enumerate(exp_names):
+        ax = axes[i]
+        exp_data = results[exp_name]
+
+        grouped = {}
+        for key, val in exp_data.items():
+            mode = val.get('mode', key.split('_T')[0])
+            T = val.get('hopfield_steps', int(key.split('_T')[1]))
+            if mode not in grouped:
+                grouped[mode] = []
+            grouped[mode].append((T, val['best_val_loss']))
+
+        for mode, entries in sorted(grouped.items()):
+            entries.sort(key=lambda x: x[0])
+            steps = [e[0] for e in entries]
+            losses = [e[1] for e in entries]
+            c = COLORS.get(mode, '#999')
+            label = mode_labels.get(mode, mode)
+            ax.plot(steps, losses, color=c, marker='o', linewidth=2,
+                    markersize=6, label=label)
+
+        ax.set_title(EXP_TITLES.get(exp_name, exp_name), fontweight='bold')
+        ax.set_xlabel('Hopfield Steps (T)')
+        ax.set_ylabel('Best Val Loss')
+        ax.legend(frameon=False)
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    path = os.path.join(output_dir, 'ablation_combined.png')
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f'Saved {path}')
 
 
 if __name__ == '__main__':
-    plot_experiment_results()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--results', default='results/experiment_results.json')
+    parser.add_argument('--ablation', default=None, help='Path to ablation results JSON')
+    parser.add_argument('--output', default='results')
+    args = parser.parse_args()
+
+    plot_training_curves(args.results, args.output)
+    plot_bar_comparison(args.results, args.output)
+    plot_summary(args.results, args.output)
+
+    if args.ablation:
+        plot_ablation(args.ablation, args.output)
+
+    print('\nAll plots generated.')
