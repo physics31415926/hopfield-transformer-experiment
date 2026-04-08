@@ -343,10 +343,198 @@ def plot_ablation(results_path, output_dir='results'):
     print(f'Saved {path}')
 
 
+def plot_scaling(scaling_path, output_dir='results'):
+    """Plot scaling experiment: val loss vs model size for each variant."""
+    with open(scaling_path) as f:
+        results = json.load(f)
+
+    os.makedirs(output_dir, exist_ok=True)
+    exp_names = list(results.keys())
+    n_exp = len(exp_names)
+
+    fig, axes = plt.subplots(1, n_exp, figsize=(6 * n_exp, 5))
+    if n_exp == 1:
+        axes = [axes]
+
+    fig.suptitle('Scaling: Effect of Model Size (d_model)',
+                 fontsize=14, fontweight='bold', y=1.03)
+
+    mode_labels = {
+        'vanilla': 'Vanilla Transformer',
+        'hopfield': 'Hopfield Attention',
+        'augmented': 'Hopfield + Memory',
+    }
+
+    for i, exp_name in enumerate(exp_names):
+        ax = axes[i]
+        exp_data = results[exp_name]
+
+        # Group by mode
+        grouped = defaultdict(list)
+        for key, val in exp_data.items():
+            mode = val['mode']
+            d = val['d_model']
+            grouped[mode].append((d, val['best_val_loss'], val['params']))
+
+        for mode, entries in sorted(grouped.items()):
+            entries.sort(key=lambda x: x[0])
+            dims = [e[0] for e in entries]
+            losses = [e[1] for e in entries]
+            params = [e[2] for e in entries]
+            c = COLORS.get(mode, '#999')
+            label = mode_labels.get(mode, mode)
+            ax.plot(dims, losses, color=c, marker='s', linewidth=2,
+                    markersize=7, label=label)
+            # Annotate param counts
+            for d, l, p in zip(dims, losses, params):
+                ax.annotate(f'{p//1000}K', (d, l), textcoords='offset points',
+                           xytext=(0, 8), fontsize=7, ha='center', color=c)
+
+        ax.set_title(EXP_TITLES.get(exp_name, exp_name), fontweight='bold')
+        ax.set_xlabel('d_model')
+        ax.set_ylabel('Best Val Loss')
+        ax.set_xscale('log', base=2)
+        ax.set_xticks(dims)
+        ax.set_xticklabels([str(d) for d in dims])
+        ax.legend(frameon=False)
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    path = os.path.join(output_dir, 'scaling_comparison.png')
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f'Saved {path}')
+
+    # Also plot params vs loss
+    fig, axes = plt.subplots(1, n_exp, figsize=(6 * n_exp, 5))
+    if n_exp == 1:
+        axes = [axes]
+    fig.suptitle('Scaling: Parameters vs Performance',
+                 fontsize=14, fontweight='bold', y=1.03)
+
+    for i, exp_name in enumerate(exp_names):
+        ax = axes[i]
+        exp_data = results[exp_name]
+
+        grouped = defaultdict(list)
+        for key, val in exp_data.items():
+            mode = val['mode']
+            grouped[mode].append((val['params'], val['best_val_loss']))
+
+        for mode, entries in sorted(grouped.items()):
+            entries.sort(key=lambda x: x[0])
+            params = [e[0] for e in entries]
+            losses = [e[1] for e in entries]
+            c = COLORS.get(mode, '#999')
+            label = mode_labels.get(mode, mode)
+            ax.plot(params, losses, color=c, marker='s', linewidth=2,
+                    markersize=7, label=label)
+
+        ax.set_title(EXP_TITLES.get(exp_name, exp_name), fontweight='bold')
+        ax.set_xlabel('Parameters')
+        ax.set_ylabel('Best Val Loss')
+        ax.legend(frameon=False)
+        ax.grid(True, alpha=0.3)
+        ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f'{x/1000:.0f}K'))
+
+    plt.tight_layout()
+    path = os.path.join(output_dir, 'scaling_params.png')
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f'Saved {path}')
+
+
+def plot_wikitext(results_path, output_dir='results'):
+    """Plot WikiText-2 experiment results."""
+    with open(results_path) as f:
+        results = json.load(f)
+
+    os.makedirs(output_dir, exist_ok=True)
+    modes = list(results.keys())
+
+    has_history = any('history' in results[m] for m in modes)
+
+    # Training curves
+    if has_history:
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        fig.suptitle('WikiText-2 Character-Level LM', fontsize=15, fontweight='bold', y=1.02)
+
+        for mode in modes:
+            h = results[mode].get('history', {})
+            if not h:
+                continue
+            epochs = list(range(1, len(h['train_loss']) + 1))
+            c = COLORS.get(mode, '#999')
+            label = LABELS.get(mode, mode)
+
+            axes[0].plot(epochs, h['train_loss'], color=c, label=label, linewidth=2)
+            axes[1].plot(epochs, h['val_loss'], color=c, label=label, linewidth=2,
+                        linestyle='--', marker='o', markersize=3)
+
+        axes[0].set_title('Training Loss')
+        axes[0].set_xlabel('Epoch')
+        axes[0].set_ylabel('Loss')
+        axes[0].legend(frameon=False)
+        axes[0].grid(True, alpha=0.3)
+
+        axes[1].set_title('Validation Loss')
+        axes[1].set_xlabel('Epoch')
+        axes[1].set_ylabel('Loss')
+        axes[1].legend(frameon=False)
+        axes[1].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        path = os.path.join(output_dir, 'wikitext_curves.png')
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        print(f'Saved {path}')
+
+    # Bar comparison
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+    fig.suptitle('WikiText-2: Model Comparison', fontsize=14, fontweight='bold', y=1.02)
+
+    x = np.arange(len(modes))
+    colors = [COLORS.get(m, '#999') for m in modes]
+    xlabels = [LABELS.get(m, m) for m in modes]
+
+    vals = [results[m].get('best_val_loss', 0) for m in modes]
+    bars = axes[0].bar(x, vals, 0.55, color=colors, edgecolor='white', linewidth=0.5)
+    axes[0].set_title('Best Validation Loss', fontweight='bold')
+    axes[0].set_ylabel('Loss (nats/char)')
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(xlabels, rotation=15, ha='right', fontsize=9)
+    for bar, v in zip(bars, vals):
+        axes[0].text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                f'{v:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+    axes[0].grid(True, axis='y', alpha=0.3)
+    best_idx = np.argmin(vals)
+    bars[best_idx].set_edgecolor('#333')
+    bars[best_idx].set_linewidth(2)
+
+    vals = [results[m].get('time', 0) for m in modes]
+    bars = axes[1].bar(x, vals, 0.55, color=colors, edgecolor='white', linewidth=0.5)
+    axes[1].set_title('Training Time', fontweight='bold')
+    axes[1].set_ylabel('Seconds')
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(xlabels, rotation=15, ha='right', fontsize=9)
+    for bar, v in zip(bars, vals):
+        axes[1].text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                f'{v:.1f}s', ha='center', va='bottom', fontsize=9, fontweight='bold')
+    axes[1].grid(True, axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    path = os.path.join(output_dir, 'wikitext_comparison.png')
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f'Saved {path}')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--results', default='results/experiment_results.json')
     parser.add_argument('--ablation', default=None, help='Path to ablation results JSON')
+    parser.add_argument('--scaling', default=None, help='Path to scaling results JSON')
+    parser.add_argument('--wikitext', default=None, help='Path to wikitext results JSON')
     parser.add_argument('--output', default='results')
     args = parser.parse_args()
 
@@ -356,5 +544,11 @@ if __name__ == '__main__':
 
     if args.ablation:
         plot_ablation(args.ablation, args.output)
+
+    if args.scaling:
+        plot_scaling(args.scaling, args.output)
+
+    if args.wikitext:
+        plot_wikitext(args.wikitext, args.output)
 
     print('\nAll plots generated.')
