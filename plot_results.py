@@ -11,6 +11,7 @@ import matplotlib.ticker as ticker
 import numpy as np
 import os
 import argparse
+from collections import defaultdict
 
 # Style config
 plt.rcParams.update({
