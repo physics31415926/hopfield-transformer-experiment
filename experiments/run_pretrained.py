@@ -181,11 +181,14 @@ def finetune(model, tokenizer, text, epochs=3, lr=2e-5, max_length=512,
     dataset = TextDataset(input_ids, max_length)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    # Only train new parameters (Hopfield beta, memory bank) + optionally LoRA-like
+    # Train new Hopfield params + attention projections in patched layers
     trainable_params = []
     frozen_params = []
     for name, param in model.named_parameters():
-        if 'log_beta' in name or 'memory_bank' in name or 'hopfield' in name:
+        # Train: Hopfield-specific params + all params inside patched attention layers
+        is_hopfield = ('log_beta' in name or 'memory_bank' in name or 'hopfield' in name)
+        is_patched_attn = ('self_attn.original.' in name or 'self_attn.memory_bank.' in name)
+        if is_hopfield or is_patched_attn:
             param.requires_grad = True
             trainable_params.append(param)
         else:
@@ -279,14 +282,14 @@ def main():
         model, tokenizer = load_model_and_tokenizer(args.model_path, device)
 
         if mode == 'hopfield':
-            n_patched = patch_model_attention(
+            model, n_patched = patch_model_attention(
                 model, mode='hopfield',
                 num_steps=args.hopfield_steps,
                 layers=patch_layers,
             )
             print(f"  Patched {n_patched} layers with Hopfield attention (T={args.hopfield_steps})")
         elif mode == 'augmented':
-            n_patched = patch_model_attention(
+            model, n_patched = patch_model_attention(
                 model, mode='augmented',
                 num_steps=args.hopfield_steps,
                 num_memories=args.num_memories,
