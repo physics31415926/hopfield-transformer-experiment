@@ -53,29 +53,29 @@ class HopfieldAttentionWrapper(nn.Module):
     def _hopfield_attention(self, query, key, value, attention_mask=None):
         """
         Multi-step Hopfield attention.
-        query: (B, num_heads, L_q, head_dim)
-        key:   (B, num_heads, L_k, head_dim)  (already GQA-expanded)
-        value: (B, num_heads, L_k, head_dim)  (already GQA-expanded)
+        Iterates in key-space to refine attention weights, then retrieves from values.
+        T=1 is exactly standard attention (when beta=1).
         """
         beta = self.beta
         scale = self.scaling
 
-        # Initialize state as query
+        # Iterate: refine query state in key-space
         state = query  # (B, H, L_q, D)
 
         for t in range(self.num_steps):
-            # Compute attention scores
             scores = torch.matmul(state, key.transpose(-2, -1)) * scale * beta
 
-            # Apply causal mask
             if attention_mask is not None:
                 scores = scores + attention_mask
 
-            # Softmax
             attn_weights = F.softmax(scores, dim=-1)
 
-            # Update state: retrieve from values
-            state = torch.matmul(attn_weights, value)
+            if t < self.num_steps - 1:
+                # Intermediate steps: update state in key-space
+                state = torch.matmul(attn_weights, key)
+            else:
+                # Final step: retrieve from values
+                state = torch.matmul(attn_weights, value)
 
         return state, attn_weights
 

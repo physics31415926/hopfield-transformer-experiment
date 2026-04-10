@@ -294,7 +294,8 @@ def main():
             )
             print(f"  Patched {n_patched} layers with Hopfield + Memory")
 
-        param_count = sum(p.numel() for p in model.parameters())
+        # Ensure all new modules are on the right device and dtype
+        model = model.to(device)
         new_params = sum(p.numel() for n, p in model.named_parameters()
                         if 'log_beta' in n or 'memory_bank' in n or 'hopfield' in n)
         print(f"  Total params: {param_count:,} (new: {new_params:,})")
