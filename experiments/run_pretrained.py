@@ -294,7 +294,7 @@ def main():
             )
             print(f"  Patched {n_patched} layers with Hopfield + Memory")
 
-        # Ensure all new modules are on the right device and dtype
+        # Ensure model is on the right device
         model = model.to(device)
 
         param_count = sum(p.numel() for p in model.parameters())

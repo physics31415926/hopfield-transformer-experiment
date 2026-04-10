@@ -209,15 +209,20 @@ def patch_model_attention(model, mode='hopfield', num_steps=3,
         original_attn = getattr(layer, attn_attr)
         d_model = model.config.hidden_size
 
+        # Detect device and dtype from original attention
+        ref_param = next(original_attn.parameters())
+        target_device = ref_param.device
+        target_dtype = ref_param.dtype
+
         if mode == 'hopfield':
             new_attn = HopfieldAttentionWrapper(
                 original_attn, num_steps=num_steps
-            )
+            ).to(device=target_device, dtype=target_dtype)
         elif mode == 'augmented':
             new_attn = HopfieldMemoryWrapper(
                 original_attn, d_model=d_model,
                 num_memories=num_memories, num_steps=num_steps
-            )
+            ).to(device=target_device, dtype=target_dtype)
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
