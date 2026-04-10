@@ -12,12 +12,15 @@ from torch.utils.data import DataLoader
 import time
 import json
 import os
+import sys
 import argparse
-from run_experiments import (
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from experiments.run_synthetic import (
     AssociativeRecallDataset, CharLMDataset,
     collate_recall, train_epoch, evaluate
 )
-from model import build_model
+from src.model import build_model
 
 
 def run_scaling(args):

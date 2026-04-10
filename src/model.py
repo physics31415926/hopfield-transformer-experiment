@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from typing import Optional, Tuple
-from hopfield_layers import HopfieldAttention, AssociativeMemoryLayer
+from .hopfield_layers import HopfieldAttention, AssociativeMemoryLayer
 
 
 class FeedForward(nn.Module):

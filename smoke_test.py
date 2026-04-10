@@ -1,5 +1,7 @@
 import torch
-from model import build_model
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+from src.model import build_model
 
 for mode in ['vanilla', 'hopfield', 'augmented']:
     m = build_model(mode, vocab_size=64, d_model=128, num_heads=4, d_ff=256, num_layers=2, max_seq_len=64).cuda()

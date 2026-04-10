@@ -15,9 +15,12 @@ from torch.utils.data import Dataset, DataLoader
 import time
 import json
 import os
+import sys
 import argparse
 from collections import defaultdict
-from model import build_model
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from src.model import build_model
 
 
 # ============================================================
