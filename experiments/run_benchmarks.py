@@ -41,23 +41,49 @@ def load_model(model_path, device='cuda', dtype=torch.bfloat16):
     return model, tokenizer
 
 
-def load_benchmark_data(benchmark_name):
-    """Load benchmark dataset from HuggingFace."""
+def load_benchmark_data(benchmark_name, data_dir=None):
+    """Load benchmark dataset from local files first, fallback to HuggingFace."""
+    if data_dir is None:
+        data_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'benchmarks')
+
     print(f"Loading {benchmark_name} dataset...")
 
     if benchmark_name == 'wikitext-103':
-        ds = load_dataset('wikitext', 'wikitext-103-raw-v1', split='test')
-        text = '\n\n'.join([t for t in ds['text'] if t.strip()])
+        local_path = os.path.join(data_dir, 'wikitext103_test.txt')
+        if os.path.exists(local_path):
+            print(f"  Using local file: {local_path}")
+            with open(local_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+        else:
+            ds = load_dataset('wikitext', 'wikitext-103-raw-v1', split='test')
+            text = '\n\n'.join([t for t in ds['text'] if t.strip()])
         return {'type': 'perplexity', 'text': text, 'name': 'WikiText-103'}
 
-    elif benchmark_name == 'ptb':
-        ds = load_dataset('ptb_text_only', 'penn_treebank', split='test')
-        text = '\n'.join(ds['sentence'])
-        return {'type': 'perplexity', 'text': text, 'name': 'PTB'}
+    elif benchmark_name == 'wikitext-2':
+        # Use our existing WikiText-2 data
+        local_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'wikitext-2', 'wiki.valid.tokens')
+        if os.path.exists(local_path):
+            print(f"  Using local file: {local_path}")
+            with open(local_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+        else:
+            ds = load_dataset('wikitext', 'wikitext-2-raw-v1', split='test')
+            text = '\n\n'.join([t for t in ds['text'] if t.strip()])
+        return {'type': 'perplexity', 'text': text, 'name': 'WikiText-2'}
 
     elif benchmark_name == 'lambada':
-        ds = load_dataset('lambada', split='test')
-        return {'type': 'lambada', 'examples': ds, 'name': 'LAMBADA'}
+        local_path = os.path.join(data_dir, 'lambada_test.jsonl')
+        if os.path.exists(local_path):
+            print(f"  Using local file: {local_path}")
+            import json as _json
+            examples = []
+            with open(local_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    examples.append(_json.loads(line))
+            return {'type': 'lambada', 'examples': examples, 'name': 'LAMBADA'}
+        else:
+            ds = load_dataset('EleutherAI/lambada_openai', split='test')
+            return {'type': 'lambada', 'examples': ds, 'name': 'LAMBADA'}
 
     else:
         raise ValueError(f"Unknown benchmark: {benchmark_name}")
@@ -255,7 +281,7 @@ def main():
                         default='/root/.cache/modelscope/hub/models/Qwen/Qwen3-0___6B',
                         help='Path to Qwen3-0.6B')
     parser.add_argument('--device', type=str, default='cuda:0')
-    parser.add_argument('--benchmarks', type=str, default='wikitext-103,lambada,ptb',
+    parser.add_argument('--benchmarks', type=str, default='wikitext-103,wikitext-2,lambada',
                         help='Comma-separated benchmark names')
     parser.add_argument('--modes', type=str, default='original,hopfield,augmented',
                         help='Comma-separated modes to evaluate')
