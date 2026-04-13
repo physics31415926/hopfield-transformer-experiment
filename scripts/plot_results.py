@@ -530,18 +530,183 @@ def plot_wikitext(results_path, output_dir='results'):
     print(f'Saved {path}')
 
 
+def plot_pretrained(pretrained_path, output_dir='results'):
+    """Plot pretrained model benchmark results with non-zero y-axis baseline."""
+    with open(pretrained_path) as f:
+        data = json.load(f)
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # --- Plot 1: PPL comparison (post-finetune focus) ---
+    modes = []
+    ppl_pre = []
+    ppl_post = []
+    colors = []
+    mode_colors = {
+        'original': COLORS['vanilla'],
+        'hopfield': COLORS['hopfield'],
+        'augmented': COLORS['augmented'],
+    }
+    mode_labels = {
+        'original': 'Original',
+        'hopfield': 'Hopfield Attn',
+        'augmented': 'Augmented',
+    }
+
+    for mode in ['original', 'hopfield', 'augmented']:
+        if mode not in data:
+            continue
+        d = data[mode]
+        modes.append(mode_labels[mode])
+        colors.append(mode_colors[mode])
+        ppl_pre.append(d['pre_finetune']['perplexity'])
+        if 'post_finetune' in d:
+            ppl_post.append(d['post_finetune']['perplexity'])
+        else:
+            ppl_post.append(d['pre_finetune']['perplexity'])
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
+    fig.suptitle('Qwen3-0.6B — Hopfield Attention Replacement (Last 4 Layers, 5 epochs)',
+                 fontsize=14, fontweight='bold', y=1.02)
+
+    # Left: Post-finetune PPL (non-zero baseline)
+    x = np.arange(len(modes))
+    width = 0.55
+    bars = axes[0].bar(x, ppl_post, width, color=colors, edgecolor='white', linewidth=1.5)
+
+    # Non-zero y-axis: set bottom to slightly below min value
+    min_val = min(ppl_post)
+    max_val = max(ppl_post)
+    margin = (max_val - min_val) * 0.15
+    y_bottom = max(0, min_val - margin * 2)
+    axes[0].set_ylim(bottom=y_bottom, top=max_val + margin * 3)
+
+    for bar, v in zip(bars, ppl_post):
+        axes[0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + margin * 0.3,
+                     f'{v:.1f}', ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(modes, fontsize=11)
+    axes[0].set_ylabel('Perplexity (lower is better)', fontsize=11)
+    axes[0].set_title('Post-Finetune Perplexity', fontsize=12, fontweight='bold')
+    axes[0].grid(True, axis='y', alpha=0.3)
+
+    # Add a break indicator on y-axis if baseline is cut
+    if y_bottom > 0:
+        axes[0].axhline(y=y_bottom, color='gray', linestyle='--', alpha=0.3)
+        axes[0].text(0.02, 0.02, f'y-axis starts at {y_bottom:.0f}',
+                     transform=axes[0].transAxes, fontsize=8, color='gray', style='italic')
+
+    # Right: Pre vs Post finetune comparison
+    width = 0.35
+    bars_pre = axes[1].bar(x - width/2, ppl_pre, width, color=colors, alpha=0.35,
+                           edgecolor='white', linewidth=1, label='Pre-finetune')
+    bars_post = axes[1].bar(x + width/2, ppl_post, width, color=colors,
+                            edgecolor='white', linewidth=1.5, label='Post-finetune')
+
+    for bar, v in zip(bars_pre, ppl_pre):
+        axes[1].text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                     f'{v:.0f}', ha='center', va='bottom', fontsize=9, fontweight='bold', alpha=0.6)
+    for bar, v in zip(bars_post, ppl_post):
+        axes[1].text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                     f'{v:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(modes, fontsize=11)
+    axes[1].set_ylabel('Perplexity (log scale)', fontsize=11)
+    axes[1].set_yscale('log')
+    axes[1].set_title('Pre vs Post Finetune', fontsize=12, fontweight='bold')
+    axes[1].legend(fontsize=10)
+    axes[1].grid(True, axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    path = os.path.join(output_dir, 'pretrained_comparison.png')
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f'Saved {path}')
+
+    # --- Plot 2: Speed + Params overview ---
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle('Qwen3-0.6B — Efficiency Analysis',
+                 fontsize=14, fontweight='bold', y=1.02)
+
+    # Speed comparison
+    speeds = []
+    for mode in ['original', 'hopfield', 'augmented']:
+        if mode not in data:
+            continue
+        d = data[mode]
+        if 'post_finetune' in d:
+            speeds.append(d['post_finetune']['tokens_per_sec'])
+        else:
+            speeds.append(d['pre_finetune']['tokens_per_sec'])
+
+    bars = axes[0].bar(x, speeds, 0.55, color=colors, edgecolor='white', linewidth=1.5)
+    min_spd = min(speeds)
+    max_spd = max(speeds)
+    spd_margin = (max_spd - min_spd) * 0.15
+    axes[0].set_ylim(bottom=max(0, min_spd - spd_margin * 2), top=max_spd + spd_margin * 3)
+    for bar, v in zip(bars, speeds):
+        axes[0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + spd_margin * 0.3,
+                     f'{v:.0f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(modes, fontsize=11)
+    axes[0].set_ylabel('Tokens/sec', fontsize=11)
+    axes[0].set_title('Inference Speed', fontsize=12, fontweight='bold')
+    axes[0].grid(True, axis='y', alpha=0.3)
+
+    # Param count
+    params = []
+    new_params = []
+    for mode in ['original', 'hopfield', 'augmented']:
+        if mode not in data:
+            continue
+        d = data[mode]
+        params.append(d['params'] / 1e6)
+        new_params.append(d['new_params'] / 1e6)
+
+    bars_base = axes[1].bar(x, [p - n for p, n in zip(params, new_params)], 0.55,
+                            color=colors, alpha=0.5, edgecolor='white', linewidth=1, label='Original params')
+    bars_new = axes[1].bar(x, new_params, 0.55,
+                           bottom=[p - n for p, n in zip(params, new_params)],
+                           color=colors, edgecolor='white', linewidth=1.5, label='New params')
+
+    min_p = min(params)
+    max_p = max(params)
+    p_margin = (max_p - min_p) * 0.15 if max_p > min_p else max_p * 0.05
+    axes[1].set_ylim(bottom=max(0, min_p - p_margin * 3), top=max_p + p_margin * 3)
+    for bar, v, nv in zip(bars_new, params, new_params):
+        label_text = f'{v:.0f}M' if nv < 0.01 else f'{v:.0f}M (+{nv:.1f}M)'
+        axes[1].text(bar.get_x() + bar.get_width()/2, v + p_margin * 0.3,
+                     label_text, ha='center', va='bottom', fontsize=9, fontweight='bold')
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(modes, fontsize=11)
+    axes[1].set_ylabel('Parameters (M)', fontsize=11)
+    axes[1].set_title('Model Size', fontsize=12, fontweight='bold')
+    axes[1].legend(fontsize=9)
+    axes[1].grid(True, axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    path = os.path.join(output_dir, 'pretrained_efficiency.png')
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f'Saved {path}')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--results', default='results/experiment_results.json')
     parser.add_argument('--ablation', default=None, help='Path to ablation results JSON')
     parser.add_argument('--scaling', default=None, help='Path to scaling results JSON')
     parser.add_argument('--wikitext', default=None, help='Path to wikitext results JSON')
+    parser.add_argument('--pretrained', default=None, help='Path to pretrained results JSON')
     parser.add_argument('--output', default='results')
     args = parser.parse_args()
 
-    plot_training_curves(args.results, args.output)
-    plot_bar_comparison(args.results, args.output)
-    plot_summary(args.results, args.output)
+    if os.path.exists(args.results):
+        plot_training_curves(args.results, args.output)
+        plot_bar_comparison(args.results, args.output)
+        plot_summary(args.results, args.output)
 
     if args.ablation:
         plot_ablation(args.ablation, args.output)
@@ -551,5 +716,8 @@ if __name__ == '__main__':
 
     if args.wikitext:
         plot_wikitext(args.wikitext, args.output)
+
+    if args.pretrained:
+        plot_pretrained(args.pretrained, args.output)
 
     print('\nAll plots generated.')

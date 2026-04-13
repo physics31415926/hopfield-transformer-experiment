@@ -189,6 +189,9 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 - **Augmented mode scales to all layers**: PPL 114.34 (3.1x better than baseline) because it preserves original attention and adds memory as residual
 - **Augmented mode preserves original attention** — the memory bank acts as a complementary retrieval mechanism, not a replacement
 
+![Pretrained Comparison](results/pretrained_comparison.png)
+![Pretrained Efficiency](results/pretrained_efficiency.png)
+
 ---
 
 ## Key Findings
@@ -256,7 +259,8 @@ python experiments/run_pretrained.py --device cuda:0 --finetune --finetune_epoch
 python scripts/plot_results.py --results results/experiment_results.json \
     --ablation results/ablation_results.json \
     --scaling results/scaling_results.json \
-    --wikitext results/wikitext2_results.json
+    --wikitext results/wikitext2_results.json \
+    --pretrained results/pretrained_results.json
 ```
 
 ## References
