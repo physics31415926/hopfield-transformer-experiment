@@ -730,6 +730,201 @@ def plot_pretrained(pretrained_path, output_dir='results'):
     print(f'Saved {path}')
 
 
+def plot_benchmarks(benchmark_path, output_dir='results'):
+    """Plot public benchmark results (WikiText-103, LAMBADA, PTB)."""
+    with open(benchmark_path) as f:
+        data = json.load(f)
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    mode_colors = {
+        'original': COLORS['vanilla'],
+        'hopfield': COLORS['hopfield'],
+        'augmented': COLORS['augmented'],
+    }
+    mode_labels = {
+        'original': 'Original Qwen3-0.6B',
+        'hopfield': 'Hopfield Attention',
+        'augmented': 'Hopfield + Memory',
+    }
+    modes = [m for m in ['original', 'hopfield', 'augmented'] if m in data]
+    colors = [mode_colors[m] for m in modes]
+    labels = [mode_labels[m] for m in modes]
+
+    # Collect all benchmarks that have perplexity
+    ppl_benchmarks = []
+    for bname in ['wikitext-103', 'ptb']:
+        if any(bname in data[m] for m in modes):
+            ppl_benchmarks.append(bname)
+
+    has_lambada = any('lambada' in data[m] for m in modes)
+
+    n_plots = len(ppl_benchmarks) + (1 if has_lambada else 0)
+    if n_plots == 0:
+        print("No benchmark data to plot.")
+        return
+
+    # --- Plot 1: Perplexity comparison across benchmarks ---
+    fig, axes = plt.subplots(1, n_plots, figsize=(5.5 * n_plots, 5.5))
+    if n_plots == 1:
+        axes = [axes]
+    fig.suptitle('Qwen3-0.6B — Public Benchmark Comparison (Last 4 Layers, 5 epochs)',
+                 fontsize=14, fontweight='bold', y=1.02)
+
+    bench_titles = {
+        'wikitext-103': 'WikiText-103 Perplexity',
+        'ptb': 'PTB Perplexity',
+        'lambada': 'LAMBADA',
+    }
+
+    plot_idx = 0
+
+    # PPL bar charts
+    for bname in ppl_benchmarks:
+        ax = axes[plot_idx]
+        x = np.arange(len(modes))
+        ppls = []
+        for m in modes:
+            if bname in data[m]:
+                ppls.append(data[m][bname]['perplexity'])
+            else:
+                ppls.append(0)
+
+        bars = ax.bar(x, ppls, 0.55, color=colors, edgecolor='white', linewidth=1.5)
+
+        # Non-zero y-axis
+        valid_ppls = [p for p in ppls if p > 0]
+        if valid_ppls:
+            min_val = min(valid_ppls)
+            max_val = max(valid_ppls)
+            rng = max_val - min_val
+            if rng > 0:
+                margin = rng * 0.15
+                y_bottom = max(0, min_val - margin * 2)
+                ax.set_ylim(bottom=y_bottom, top=max_val + margin * 3)
+            else:
+                y_bottom = max(0, min_val * 0.9)
+                ax.set_ylim(bottom=y_bottom, top=max_val * 1.1)
+                margin = (max_val - y_bottom) * 0.15
+
+            for bar, v in zip(bars, ppls):
+                if v > 0:
+                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                            f'{v:.1f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+            if y_bottom > 0:
+                ax.text(0.02, 0.02, f'y starts at {y_bottom:.0f}',
+                        transform=ax.transAxes, fontsize=7, color='gray', style='italic')
+
+            best_idx = np.argmin([p if p > 0 else float('inf') for p in ppls])
+            bars[best_idx].set_edgecolor('#333')
+            bars[best_idx].set_linewidth(2.5)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, fontsize=9, rotation=15, ha='right')
+        ax.set_ylabel('Perplexity (lower is better)', fontsize=10)
+        ax.set_title(bench_titles.get(bname, bname), fontsize=12, fontweight='bold')
+        ax.grid(True, axis='y', alpha=0.3)
+        plot_idx += 1
+
+    # LAMBADA: accuracy bars
+    if has_lambada:
+        ax = axes[plot_idx]
+        x = np.arange(len(modes))
+        accs = []
+        for m in modes:
+            if 'lambada' in data[m]:
+                accs.append(data[m]['lambada']['accuracy'])
+            else:
+                accs.append(0)
+
+        bars = ax.bar(x, accs, 0.55, color=colors, edgecolor='white', linewidth=1.5)
+
+        valid_accs = [a for a in accs if a > 0]
+        if valid_accs:
+            min_val = min(valid_accs)
+            max_val = max(valid_accs)
+            rng = max_val - min_val
+            if rng > 0:
+                margin = rng * 0.15
+                y_bottom = max(0, min_val - margin * 2)
+                ax.set_ylim(bottom=y_bottom, top=min(100, max_val + margin * 3))
+            else:
+                y_bottom = max(0, min_val * 0.9)
+                ax.set_ylim(bottom=y_bottom, top=min(100, max_val * 1.1))
+
+            for bar, v in zip(bars, accs):
+                if v > 0:
+                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                            f'{v:.1f}%', ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+            if y_bottom > 0:
+                ax.text(0.02, 0.02, f'y starts at {y_bottom:.1f}%',
+                        transform=ax.transAxes, fontsize=7, color='gray', style='italic')
+
+            best_idx = np.argmax(accs)
+            bars[best_idx].set_edgecolor('#333')
+            bars[best_idx].set_linewidth(2.5)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, fontsize=9, rotation=15, ha='right')
+        ax.set_ylabel('Accuracy (%)', fontsize=10)
+        ax.set_title('LAMBADA Last-Word Accuracy', fontsize=12, fontweight='bold')
+        ax.grid(True, axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    path = os.path.join(output_dir, 'benchmark_comparison.png')
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f'Saved {path}')
+
+    # --- Plot 2: Summary radar/grouped bar ---
+    # Grouped bar: all metrics side by side
+    all_metrics = {}
+    for bname in ppl_benchmarks:
+        for m in modes:
+            if bname in data[m]:
+                all_metrics.setdefault(m, {})[f'{bname}\nPPL'] = data[m][bname]['perplexity']
+    if has_lambada:
+        for m in modes:
+            if 'lambada' in data[m]:
+                all_metrics.setdefault(m, {})['LAMBADA\nAcc%'] = data[m]['lambada']['accuracy']
+
+    if all_metrics:
+        metric_names = list(next(iter(all_metrics.values())).keys())
+        n_metrics = len(metric_names)
+        n_modes = len(modes)
+
+        fig, ax = plt.subplots(figsize=(max(8, n_metrics * 3), 5.5))
+        fig.suptitle('Qwen3-0.6B — All Benchmarks Summary',
+                     fontsize=14, fontweight='bold', y=1.02)
+
+        x = np.arange(n_metrics)
+        width = 0.75 / n_modes
+
+        for i, m in enumerate(modes):
+            vals = [all_metrics.get(m, {}).get(mn, 0) for mn in metric_names]
+            offset = (i - n_modes / 2 + 0.5) * width
+            bars = ax.bar(x + offset, vals, width, color=mode_colors[m],
+                         edgecolor='white', linewidth=1, label=mode_labels[m])
+            for bar, v in zip(bars, vals):
+                if v > 0:
+                    fmt = f'{v:.1f}' if v > 1 else f'{v:.2f}'
+                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                            fmt, ha='center', va='bottom', fontsize=8, fontweight='bold')
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(metric_names, fontsize=10)
+        ax.legend(fontsize=9, frameon=False)
+        ax.grid(True, axis='y', alpha=0.3)
+
+        plt.tight_layout()
+        path = os.path.join(output_dir, 'benchmark_summary.png')
+        fig.savefig(path, dpi=150)
+        plt.close(fig)
+        print(f'Saved {path}')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--results', default='results/experiment_results.json')
@@ -737,6 +932,7 @@ if __name__ == '__main__':
     parser.add_argument('--scaling', default=None, help='Path to scaling results JSON')
     parser.add_argument('--wikitext', default=None, help='Path to wikitext results JSON')
     parser.add_argument('--pretrained', default=None, help='Path to pretrained results JSON')
+    parser.add_argument('--benchmarks', default=None, help='Path to benchmark results JSON')
     parser.add_argument('--output', default='results')
     args = parser.parse_args()
 
@@ -756,5 +952,8 @@ if __name__ == '__main__':
 
     if args.pretrained:
         plot_pretrained(args.pretrained, args.output)
+
+    if args.benchmarks:
+        plot_benchmarks(args.benchmarks, args.output)
 
     print('\nAll plots generated.')
