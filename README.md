@@ -194,6 +194,37 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 
 ---
 
+## Experiment 8: Public Benchmarks — WikiText-103 & LAMBADA
+
+> Evaluate all three variants on standard public NLP benchmarks.
+> WikiText-103 tests general language modeling perplexity; LAMBADA tests long-range dependency via last-word prediction accuracy.
+
+### Setup
+- **Model**: Qwen3-0.6B with last 4 layers patched (layers 24-27)
+- **Fine-tuning**: 5 epochs, train only Hopfield + patched attention params
+- **WikiText-103**: 297K tokens, sliding window perplexity (window=512, stride=256)
+- **LAMBADA**: 5,153 examples, last-word prediction accuracy + perplexity
+
+### Results
+
+| Mode | WikiText-103 PPL | LAMBADA Acc | LAMBADA PPL | Speed |
+|------|-----------------|-------------|-------------|-------|
+| Original (baseline) | 22.41 | **40.00%** | **12.76** | 8,330 t/s |
+| **Hopfield Attention (T=3)** | **17.18** | 24.02% | 60.45 | 8,435 t/s |
+| Hopfield + Memory (64 mem) | 18.58 | 24.80% | 71.30 | 8,297 t/s |
+
+### Key Observations
+
+- **Hopfield Attention achieves 23% lower WikiText-103 perplexity** (17.18 vs 22.41) — the iterative attention refinement improves general language modeling
+- **Trade-off on LAMBADA**: original model retains better last-word prediction accuracy (40% vs 24%), suggesting Hopfield iterations may over-smooth token-level predictions
+- **Augmented mode** shows similar WikiText-103 gains (18.58 PPL) but doesn't help LAMBADA accuracy
+- **No speed penalty**: all three variants run at ~8,300 t/s, confirming Hopfield iterations add negligible overhead on last-4-layer patching
+
+![Benchmark Comparison](results/benchmark_comparison.png)
+![Benchmark Summary](results/benchmark_summary.png)
+
+---
+
 ## Key Findings
 
 1. **Hopfield + Memory Bank consistently dominates** on structured/repetitive tasks (LM: 0.06 vs 1.85 loss), with the associative memory bank providing dramatic gains
@@ -203,6 +234,7 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 5. **WikiText-2 confirms real-text gains**: augmented model achieves 0.036 BPC vs 1.48 BPC for vanilla — a 40x improvement
 6. **Memory bank adds ~25% parameters** but delivers disproportionate gains, especially on tasks with learnable patterns
 7. **Pretrained model patching works**: Hopfield attention on last 4 layers of Qwen3-0.6B reduces perplexity from 359 to 130 with only 4.22% parameter fine-tuning; full-layer augmented mode achieves PPL 114 (3.1x improvement)
+8. **Public benchmarks confirm WikiText gains**: Hopfield Attention achieves 23% lower WikiText-103 perplexity (17.18 vs 22.41), though at the cost of LAMBADA last-word prediction accuracy (24% vs 40%)
 
 ## Project Structure
 
@@ -217,7 +249,8 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 │   ├── run_ablation.py         # Ablation: Hopfield iteration steps T=1,2,3,5,8
 │   ├── run_scaling.py          # Scaling: d_model=64,128,256,512
 │   ├── run_wikitext.py         # WikiText-2 real text experiment
-│   └── run_pretrained.py       # Pretrained model benchmark (Qwen3-0.6B)
+│   ├── run_pretrained.py       # Pretrained model benchmark (Qwen3-0.6B)
+│   └── run_benchmarks.py       # Public benchmarks (WikiText-103, LAMBADA)
 ├── scripts/
 │   └── plot_results.py         # Visualization (curves, bars, ablation, scaling)
 ├── smoke_test.py               # Quick sanity check
@@ -228,6 +261,7 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 │   ├── scaling_results.json
 │   ├── wikitext2_results.json
 │   ├── pretrained_results.json
+│   ├── benchmark_results.json
 │   └── *.png
 └── README.md
 ```
@@ -255,12 +289,16 @@ python experiments/run_wikitext.py --epochs 30 --batch_size 128
 # Run pretrained model benchmark (requires GPU + Qwen3-0.6B)
 python experiments/run_pretrained.py --device cuda:0 --finetune --finetune_epochs 5 --patch_layers 24,25,26,27
 
+# Run public benchmarks (WikiText-103, LAMBADA)
+python experiments/run_benchmarks.py --device cuda:0 --benchmarks wikitext-103,lambada --modes original,hopfield,augmented --patch_layers 24,25,26,27
+
 # Generate all plots
 python scripts/plot_results.py --results results/experiment_results.json \
     --ablation results/ablation_results.json \
     --scaling results/scaling_results.json \
     --wikitext results/wikitext2_results.json \
-    --pretrained results/pretrained_results.json
+    --pretrained results/pretrained_results.json \
+    --benchmarks results/benchmark_results.json
 ```
 
 ## References

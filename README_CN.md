@@ -194,6 +194,37 @@ $$\xi^{new} = X \cdot \text{softmax}(\beta X^\top \xi)$$
 
 ---
 
+## 实验 8：公开基准测试 — WikiText-103 & LAMBADA
+
+> 在标准公开 NLP 基准上评估三种变体。
+> WikiText-103 测试通用语言建模困惑度；LAMBADA 通过末词预测测试长程依赖能力。
+
+### 实验设置
+- **模型**：Qwen3-0.6B，替换最后 4 层（第 24-27 层）
+- **微调**：5 个 epoch，仅训练 Hopfield + 被替换层注意力参数
+- **WikiText-103**：297K token，滑动窗口困惑度（窗口=512，步长=256）
+- **LAMBADA**：5,153 个样本，末词预测准确率 + 困惑度
+
+### 结果
+
+| 模式 | WikiText-103 PPL | LAMBADA 准确率 | LAMBADA PPL | 速度 |
+|------|-----------------|---------------|-------------|------|
+| 原始（基线） | 22.41 | **40.00%** | **12.76** | 8,330 t/s |
+| **Hopfield 注意力 (T=3)** | **17.18** | 24.02% | 60.45 | 8,435 t/s |
+| Hopfield + 记忆库 (64 mem) | 18.58 | 24.80% | 71.30 | 8,297 t/s |
+
+### 关键观察
+
+- **Hopfield 注意力 WikiText-103 困惑度降低 23%**（17.18 vs 22.41）— 迭代注意力优化改善了通用语言建模
+- **LAMBADA 上存在权衡**：原始模型保持更好的末词预测准确率（40% vs 24%），表明 Hopfield 迭代可能过度平滑了 token 级预测
+- **增强模式** WikiText-103 增益类似（PPL 18.58），但未改善 LAMBADA 准确率
+- **无速度损失**：三种变体均以 ~8,300 t/s 运行，确认最后 4 层替换的 Hopfield 迭代开销可忽略
+
+![基准对比](results/benchmark_comparison.png)
+![基准总结](results/benchmark_summary.png)
+
+---
+
 ## 核心发现
 
 1. **Hopfield + 记忆库在结构化/重复任务上持续领先**（LM: 0.06 vs 1.85 损失），联想记忆库带来显著增益
@@ -203,6 +234,7 @@ $$\xi^{new} = X \cdot \text{softmax}(\beta X^\top \xi)$$
 5. **WikiText-2 验证真实文本增益**：增强模型 BPC 0.036 vs 标准 1.48 — 40 倍改进
 6. **记忆库增加约 25% 参数**但带来不成比例的增益，尤其在具有可学习模式的任务上
 7. **预训练模型替换有效**：Qwen3-0.6B 最后 4 层 Hopfield 注意力将困惑度从 359 降至 130，仅微调 4.22% 参数；全层增强模式达到 PPL 114（3.1 倍提升）
+8. **公开基准验证 WikiText 增益**：Hopfield 注意力 WikiText-103 困惑度降低 23%（17.18 vs 22.41），但 LAMBADA 末词预测准确率有所下降（24% vs 40%）
 
 ## 项目结构
 
@@ -217,7 +249,8 @@ $$\xi^{new} = X \cdot \text{softmax}(\beta X^\top \xi)$$
 │   ├── run_ablation.py         # 消融：Hopfield 迭代步数 T=1,2,3,5,8
 │   ├── run_scaling.py          # 缩放：d_model=64,128,256,512
 │   ├── run_wikitext.py         # WikiText-2 真实文本实验
-│   └── run_pretrained.py       # 预训练模型基准测试（Qwen3-0.6B）
+│   ├── run_pretrained.py       # 预训练模型基准测试（Qwen3-0.6B）
+│   └── run_benchmarks.py       # 公开基准测试（WikiText-103, LAMBADA）
 ├── scripts/
 │   └── plot_results.py         # 可视化（曲线、柱状图、消融、缩放）
 ├── smoke_test.py               # 快速健全性检查
@@ -228,6 +261,7 @@ $$\xi^{new} = X \cdot \text{softmax}(\beta X^\top \xi)$$
 │   ├── scaling_results.json
 │   ├── wikitext2_results.json
 │   ├── pretrained_results.json
+│   ├── benchmark_results.json
 │   └── *.png
 └── README.md
 ```
@@ -255,12 +289,16 @@ python experiments/run_wikitext.py --epochs 30 --batch_size 128
 # 运行预训练模型基准测试（需要 GPU + Qwen3-0.6B）
 python experiments/run_pretrained.py --device cuda:0 --finetune --finetune_epochs 5 --patch_layers 24,25,26,27
 
+# 运行公开基准测试（WikiText-103, LAMBADA）
+python experiments/run_benchmarks.py --device cuda:0 --benchmarks wikitext-103,lambada --modes original,hopfield,augmented --patch_layers 24,25,26,27
+
 # 生成所有图表
 python scripts/plot_results.py --results results/experiment_results.json \
     --ablation results/ablation_results.json \
     --scaling results/scaling_results.json \
     --wikitext results/wikitext2_results.json \
-    --pretrained results/pretrained_results.json
+    --pretrained results/pretrained_results.json \
+    --benchmarks results/benchmark_results.json
 ```
 
 ## 参考文献

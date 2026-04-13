@@ -1,0 +1,75 @@
+{
+  "original": {
+    "mode": "original",
+    "params": 596049920,
+    "new_params": 0,
+    "patch_layers": [],
+    "wikitext-103": {
+      "perplexity": 22.40703562619394,
+      "avg_nll": 3.109375,
+      "tokens_evaluated": 297771,
+      "time": 35.74637794494629,
+      "tokens_per_sec": 8330.102715822091
+    },
+    "lambada": {
+      "accuracy": 39.99611876576751,
+      "correct": 2061,
+      "total": 5153,
+      "perplexity": 12.756675296423591,
+      "avg_nll": 2.5460546872592325,
+      "time": 155.05720114707947
+    }
+  },
+  "hopfield": {
+    "mode": "hopfield",
+    "params": 596049924,
+    "new_params": 4,
+    "patch_layers": [
+      24,
+      25,
+      26,
+      27
+    ],
+    "wikitext-103": {
+      "perplexity": 17.180070153709277,
+      "avg_nll": 2.84375,
+      "tokens_evaluated": 297771,
+      "time": 35.300002336502075,
+      "tokens_per_sec": 8435.43853514392
+    },
+    "lambada": {
+      "accuracy": 24.02483989908791,
+      "correct": 1238,
+      "total": 5153,
+      "perplexity": 60.446497723090495,
+      "avg_nll": 4.101758638626249,
+      "time": 159.71099519729614
+    }
+  },
+  "augmented": {
+    "mode": "augmented",
+    "params": 604717060,
+    "new_params": 8667140,
+    "patch_layers": [
+      24,
+      25,
+      26,
+      27
+    ],
+    "wikitext-103": {
+      "perplexity": 18.576084986220376,
+      "avg_nll": 2.921875,
+      "tokens_evaluated": 297771,
+      "time": 35.888507604599,
+      "tokens_per_sec": 8297.112916499253
+    },
+    "lambada": {
+      "accuracy": 24.801086745585096,
+      "correct": 1278,
+      "total": 5153,
+      "perplexity": 71.30084213721412,
+      "avg_nll": 4.2669081385316225,
+      "time": 164.30338764190674
+    }
+  }
+}
