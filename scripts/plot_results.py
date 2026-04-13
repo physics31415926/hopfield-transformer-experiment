@@ -287,10 +287,28 @@ def plot_ablation(results_path, output_dir='results'):
             ax.set_ylabel('Best Val Loss')
             ax.set_xticks(x)
             ax.set_xticklabels([f'T={s}' for s in steps])
+
+            # Non-zero y-axis baseline for bar charts
+            min_loss = min(losses)
+            max_loss = max(losses)
+            loss_range = max_loss - min_loss
+            if loss_range > 0:
+                margin = loss_range * 0.15
+                y_bottom = max(0, min_loss - margin * 2)
+                ax.set_ylim(bottom=y_bottom, top=max_loss + margin * 3)
+            else:
+                y_bottom = max(0, min_loss * 0.95)
+                ax.set_ylim(bottom=y_bottom, top=max_loss * 1.05)
+                margin = (max_loss - y_bottom) * 0.15
+
             for bar, v in zip(bars, losses):
                 ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
-                        f'{v:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+                        f'{v:.4f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
             ax.grid(True, axis='y', alpha=0.3)
+
+            if y_bottom > 0:
+                ax.text(0.02, 0.02, f'y-axis starts at {y_bottom:.3f}',
+                        transform=ax.transAxes, fontsize=7, color='gray', style='italic')
 
             best_idx = np.argmin(losses)
             bars[best_idx].set_edgecolor('#333')
@@ -322,14 +340,33 @@ def plot_ablation(results_path, output_dir='results'):
                 grouped[mode] = []
             grouped[mode].append((T, val['best_val_loss']))
 
+        all_losses = []
         for mode, entries in sorted(grouped.items()):
             entries.sort(key=lambda x: x[0])
             steps = [e[0] for e in entries]
             losses = [e[1] for e in entries]
+            all_losses.extend(losses)
             c = COLORS.get(mode, '#999')
             label = mode_labels.get(mode, mode)
             ax.plot(steps, losses, color=c, marker='o', linewidth=2,
                     markersize=6, label=label)
+            # Annotate values on the line chart
+            for s, l in zip(steps, losses):
+                ax.annotate(f'{l:.4f}', (s, l), textcoords='offset points',
+                           xytext=(0, 8), fontsize=7, ha='center', color=c, fontweight='bold')
+
+        # Non-zero y-axis for combined line chart
+        if all_losses:
+            min_loss = min(all_losses)
+            max_loss = max(all_losses)
+            loss_range = max_loss - min_loss
+            if loss_range > 0:
+                margin = loss_range * 0.15
+                y_bottom = max(0, min_loss - margin * 2)
+                ax.set_ylim(bottom=y_bottom, top=max_loss + margin * 4)
+            else:
+                y_bottom = max(0, min_loss * 0.95)
+                ax.set_ylim(bottom=y_bottom, top=max_loss * 1.05)
 
         ax.set_title(EXP_TITLES.get(exp_name, exp_name), fontweight='bold')
         ax.set_xlabel('Hopfield Steps (T)')
