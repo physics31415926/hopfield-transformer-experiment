@@ -310,9 +310,26 @@ def main():
     # Load finetune text if needed
     ft_text = None
     if args.finetune:
-        print("Loading fine-tune data (WikiText-103 train)...")
-        ft_ds = load_dataset('wikitext', 'wikitext-103-raw-v1', split='train')
-        ft_text = '\n\n'.join([t for t in ft_ds['text'] if t.strip()])
+        # Use local WikiText-103 test as finetune data (train set unavailable offline)
+        ft_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'benchmarks', 'wikitext103_test.txt')
+        wt2_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'wikitext-2', 'wiki.valid.tokens')
+        if os.path.exists(ft_path):
+            print(f"Loading fine-tune data from local: {ft_path}")
+            with open(ft_path, 'r', encoding='utf-8') as f:
+                ft_text = f.read()
+        elif os.path.exists(wt2_path):
+            print(f"Loading fine-tune data from local: {wt2_path}")
+            with open(wt2_path, 'r', encoding='utf-8') as f:
+                ft_text = f.read()
+        else:
+            try:
+                print("Loading fine-tune data (WikiText-103 train)...")
+                ft_ds = load_dataset('wikitext', 'wikitext-103-raw-v1', split='train')
+                ft_text = '\n\n'.join([t for t in ft_ds['text'] if t.strip()])
+            except Exception as e:
+                print(f"  Could not load train set: {e}")
+                print("  Fine-tuning will be skipped.")
+                args.finetune = False
 
     results = {}
 
