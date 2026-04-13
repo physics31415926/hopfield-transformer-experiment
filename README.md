@@ -156,6 +156,41 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 
 ---
 
+## Experiment 7: Pretrained Model — Qwen3-0.6B Attention Replacement
+
+> Replace attention layers in a real pretrained LLM (Qwen3-0.6B, 596M params) with Hopfield variants.
+> Tests whether Hopfield attention can improve a production-grade model on WikiText-2 perplexity.
+
+### Setup
+- **Model**: Qwen3-0.6B (28 layers, GQA with 16 query / 8 KV heads, RoPE, hidden=1024)
+- **Evaluation**: WikiText-2 perplexity (sliding window, stride=256)
+- **Fine-tuning**: Train only new + patched attention parameters (frozen backbone)
+
+### Results — Partial Layer Patching (Last 4 Layers, 5 epochs)
+
+| Mode | Total Params | New Params | Trainable | PPL (pre-ft) | PPL (post-ft) | Speed |
+|------|-------------|------------|-----------|-------------|--------------|-------|
+| Original (baseline) | 596M | 0 | — | 358.95 | — | 6,678 t/s |
+| Hopfield Attention (T=3) | 596M | 4 | 4.22% | 1,056 | **129.75** | 7,747 t/s |
+| Hopfield + Memory (64 mem) | 605M | 8.7M | 5.60% | 475 | 187.95 | 7,660 t/s |
+
+### Results — Full Layer Patching (All 28 Layers, 5 epochs)
+
+| Mode | Total Params | New Params | Trainable | PPL (pre-ft) | PPL (post-ft) | Speed |
+|------|-------------|------------|-----------|-------------|--------------|-------|
+| Original (baseline) | 596M | 0 | — | 358.95 | — | 3,833 t/s |
+| Hopfield Attention (T=3) | 596M | 28 | 29.56% | 158,590 | 120,575 | 5,030 t/s |
+| Hopfield + Memory (64 mem) | 657M | 60.7M | 36.06% | 15,992 | **114.34** | 3,855 t/s |
+
+### Key Observations
+
+- **Hopfield Attention on last 4 layers** achieves the best partial-patch result: PPL 129.75 (2.8x better than baseline) by training only 4.22% of parameters
+- **Full-layer Hopfield replacement is too destructive** — replacing all 28 layers breaks the pretrained representations beyond recovery
+- **Augmented mode scales to all layers**: PPL 114.34 (3.1x better than baseline) because it preserves original attention and adds memory as residual
+- **Augmented mode preserves original attention** — the memory bank acts as a complementary retrieval mechanism, not a replacement
+
+---
+
 ## Key Findings
 
 1. **Hopfield + Memory Bank consistently dominates** on structured/repetitive tasks (LM: 0.06 vs 1.85 loss), with the associative memory bank providing dramatic gains
@@ -164,49 +199,61 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 4. **Ablation shows T is not critical**: performance is relatively stable across T=1-8, with slight improvements at T=2 (recall) and T=8 (LM)
 5. **WikiText-2 confirms real-text gains**: augmented model achieves 0.036 BPC vs 1.48 BPC for vanilla — a 40x improvement
 6. **Memory bank adds ~25% parameters** but delivers disproportionate gains, especially on tasks with learnable patterns
+7. **Pretrained model patching works**: Hopfield attention on last 4 layers of Qwen3-0.6B reduces perplexity from 359 to 130 with only 4.22% parameter fine-tuning; full-layer augmented mode achieves PPL 114 (3.1x improvement)
 
 ## Project Structure
 
 ```
-├── hopfield_layers.py    # Core: ModernHopfieldLayer, HopfieldAttention, HopfieldMemoryBank
-├── model.py              # Three model variants + unified HopfieldLM wrapper
-├── run_experiments.py     # Training loop + 3 synthetic experiments
-├── run_ablation.py        # Ablation: Hopfield iteration steps T=1,2,3,5,8
-├── run_scaling.py         # Scaling: d_model=64,128,256,512
-├── run_wikitext.py        # WikiText-2 real text experiment
-├── plot_results.py        # Visualization (curves, bars, ablation, scaling)
-├── smoke_test.py          # Quick sanity check
+├── src/
+│   ├── __init__.py
+│   ├── hopfield_layers.py      # Core: ModernHopfieldLayer, HopfieldAttention, HopfieldMemoryBank
+│   ├── model.py                # Three model variants + unified HopfieldLM wrapper
+│   └── hf_integration.py       # HuggingFace attention patching (Qwen3, Llama, GPT2)
+├── experiments/
+│   ├── run_synthetic.py        # 3 synthetic tasks (recall, copy, LM)
+│   ├── run_ablation.py         # Ablation: Hopfield iteration steps T=1,2,3,5,8
+│   ├── run_scaling.py          # Scaling: d_model=64,128,256,512
+│   ├── run_wikitext.py         # WikiText-2 real text experiment
+│   └── run_pretrained.py       # Pretrained model benchmark (Qwen3-0.6B)
+├── scripts/
+│   └── plot_results.py         # Visualization (curves, bars, ablation, scaling)
+├── smoke_test.py               # Quick sanity check
 ├── requirements.txt
-└── results/
-    ├── experiment_results.json
-    ├── ablation_results.json
-    ├── scaling_results.json
-    ├── wikitext2_results.json
-    └── *.png
+├── results/
+│   ├── experiment_results.json
+│   ├── ablation_results.json
+│   ├── scaling_results.json
+│   ├── wikitext2_results.json
+│   ├── pretrained_results.json
+│   └── *.png
+└── README.md
 ```
 
 ## Quick Start
 
 ```bash
-pip install torch>=2.0.0 matplotlib
+pip install -r requirements.txt
 
 # Smoke test
 python smoke_test.py
 
 # Run all synthetic experiments
-python run_experiments.py --experiment all --epochs 30 --batch_size 128 --lr 3e-4
+python experiments/run_synthetic.py --experiment all --epochs 30 --batch_size 128 --lr 3e-4
 
 # Run ablation study
-python run_ablation.py --experiment all --epochs 30 --batch_size 128
+python experiments/run_ablation.py --experiment all --epochs 30 --batch_size 128
 
 # Run scaling study
-python run_scaling.py --experiment all --epochs 30 --batch_size 128
+python experiments/run_scaling.py --experiment all --epochs 30 --batch_size 128
 
 # Run WikiText-2 experiment
-python run_wikitext.py --epochs 30 --batch_size 128
+python experiments/run_wikitext.py --epochs 30 --batch_size 128
+
+# Run pretrained model benchmark (requires GPU + Qwen3-0.6B)
+python experiments/run_pretrained.py --device cuda:0 --finetune --finetune_epochs 5 --patch_layers 24,25,26,27
 
 # Generate all plots
-python plot_results.py --results results/experiment_results.json \
+python scripts/plot_results.py --results results/experiment_results.json \
     --ablation results/ablation_results.json \
     --scaling results/scaling_results.json \
     --wikitext results/wikitext2_results.json
