@@ -1,0 +1,52 @@
+{
+  "original": {
+    "mode": "original",
+    "params": 596049920,
+    "new_params": 0,
+    "pre_finetune": {
+      "perplexity": 358.9495820632397,
+      "avg_nll": 5.883181938690402,
+      "total_tokens": 19999,
+      "time": 2.9949302673339844,
+      "tokens_per_sec": 6677.617912554149
+    }
+  },
+  "hopfield": {
+    "mode": "hopfield",
+    "params": 596049924,
+    "new_params": 4,
+    "pre_finetune": {
+      "perplexity": 1056.1912250369987,
+      "avg_nll": 6.962424532187761,
+      "total_tokens": 19999,
+      "time": 2.643019199371338,
+      "tokens_per_sec": 7566.725207579617
+    },
+    "post_finetune": {
+      "perplexity": 129.75257910060813,
+      "avg_nll": 4.865629399309778,
+      "total_tokens": 19999,
+      "time": 2.5816469192504883,
+      "tokens_per_sec": 7746.605413340632
+    }
+  },
+  "augmented": {
+    "mode": "augmented",
+    "params": 604717060,
+    "new_params": 8667140,
+    "pre_finetune": {
+      "perplexity": 475.13893884554966,
+      "avg_nll": 6.163607264096764,
+      "total_tokens": 19999,
+      "time": 2.6755223274230957,
+      "tokens_per_sec": 7474.802133033159
+    },
+    "post_finetune": {
+      "perplexity": 187.94940596292318,
+      "avg_nll": 5.236172809392919,
+      "total_tokens": 19999,
+      "time": 2.6109068393707275,
+      "tokens_per_sec": 7659.79072804455
+    }
+  }
+}
