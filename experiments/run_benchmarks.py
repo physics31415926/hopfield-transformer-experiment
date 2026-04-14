@@ -85,6 +85,22 @@ def load_benchmark_data(benchmark_name, data_dir=None):
             ds = load_dataset('EleutherAI/lambada_openai', split='test')
             return {'type': 'lambada', 'examples': ds, 'name': 'LAMBADA'}
 
+    elif benchmark_name == 'hellaswag':
+        local_path = os.path.join(data_dir, 'hellaswag_val.jsonl')
+        if os.path.exists(local_path):
+            print(f"  Using local file: {local_path}")
+            import json as _json
+            examples = []
+            with open(local_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    examples.append(_json.loads(line))
+            return {'type': 'hellaswag', 'examples': examples, 'name': 'HellaSwag'}
+        else:
+            ds = load_dataset('Rowan/hellaswag', split='validation')
+            examples = [{'ctx': x['ctx'], 'endings': x['endings'],
+                         'label': int(x['label'])} for x in ds]
+            return {'type': 'hellaswag', 'examples': examples, 'name': 'HellaSwag'}
+
     else:
         raise ValueError(f"Unknown benchmark: {benchmark_name}")
 
@@ -218,6 +234,78 @@ def eval_lambada(model, tokenizer, examples, device='cuda', max_examples=None):
     }
 
 
+@torch.no_grad()
+def eval_hellaswag(model, tokenizer, examples, device='cuda', max_examples=None):
+    """Evaluate HellaSwag: pick the most likely ending (4-choice)."""
+    correct = 0
+    total = 0
+
+    n = len(examples)
+    if max_examples:
+        n = min(n, max_examples)
+
+    print(f"  Evaluating HellaSwag on {n} examples...")
+    t0 = time.time()
+
+    for i in range(n):
+        ctx = examples[i]['ctx']
+        endings = examples[i]['endings']
+        label = examples[i]['label']
+
+        ctx_ids = tokenizer(ctx, return_tensors='pt').input_ids[0]
+        ctx_len = len(ctx_ids)
+
+        best_score = float('-inf')
+        best_idx = 0
+
+        for j, ending in enumerate(endings):
+            full_text = ctx + ' ' + ending
+            full_ids = tokenizer(full_text, return_tensors='pt').input_ids[0]
+
+            input_ids = full_ids.unsqueeze(0).to(device)
+            outputs = model(input_ids)
+            logits = outputs.logits[0]  # (seq_len, vocab)
+
+            # Score only the ending tokens (length-normalized log-likelihood)
+            end_start = ctx_len - 1  # predict from last ctx token
+            end_logits = logits[end_start:-1]
+            end_targets = full_ids[ctx_len:].to(device)
+
+            n_end = min(len(end_logits), len(end_targets))
+            if n_end == 0:
+                continue
+            end_logits = end_logits[:n_end]
+            end_targets = end_targets[:n_end]
+
+            nll = F.cross_entropy(end_logits, end_targets, reduction='sum').item()
+            score = -nll / n_end  # length-normalized
+
+            if score > best_score:
+                best_score = score
+                best_idx = j
+
+        if best_idx == label:
+            correct += 1
+        total += 1
+
+        if (i + 1) % 500 == 0:
+            elapsed = time.time() - t0
+            acc = correct / total * 100 if total > 0 else 0
+            print(f"    {i+1}/{n} - acc={acc:.1f}% - {elapsed:.1f}s")
+
+    elapsed = time.time() - t0
+    accuracy = correct / total * 100 if total > 0 else 0
+
+    print(f"  Done in {elapsed:.1f}s. Accuracy={accuracy:.2f}% ({correct}/{total})")
+
+    return {
+        'accuracy': accuracy,
+        'correct': correct,
+        'total': total,
+        'time': elapsed,
+    }
+
+
 def finetune(model, tokenizer, text, device='cuda', epochs=5, lr=1e-4,
              max_length=512, batch_tokens=4096):
     """Light fine-tune: train only Hopfield + patched attention params."""
@@ -296,6 +384,8 @@ def main():
                         help='Max tokens for perplexity eval (None=all)')
     parser.add_argument('--max_lambada', type=int, default=None,
                         help='Max LAMBADA examples (None=all)')
+    parser.add_argument('--max_hellaswag', type=int, default=None,
+                        help='Max HellaSwag examples (None=all)')
     args = parser.parse_args()
 
     benchmarks = [b.strip() for b in args.benchmarks.split(',')]
@@ -381,6 +471,11 @@ def main():
                     model, tokenizer, bd['examples'],
                     device=args.device, max_examples=args.max_lambada,
                 )
+            elif bd['type'] == 'hellaswag':
+                result = eval_hellaswag(
+                    model, tokenizer, bd['examples'],
+                    device=args.device, max_examples=args.max_hellaswag,
+                )
 
             mode_results[bname] = result
 
@@ -420,6 +515,13 @@ def main():
                 if bname in results[mode]:
                     r = results[mode][bname]
                     print(f"  {mode:<20} {r['accuracy']:>9.2f}% {r['perplexity']:>10.2f}")
+        elif bd['type'] == 'hellaswag':
+            print(f"  {'Mode':<20} {'Accuracy':>10}")
+            print(f"  {'-'*35}")
+            for mode in modes:
+                if bname in results[mode]:
+                    r = results[mode][bname]
+                    print(f"  {mode:<20} {r['accuracy']:>9.2f}%")
 
 
 if __name__ == '__main__':

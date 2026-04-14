@@ -758,8 +758,9 @@ def plot_benchmarks(benchmark_path, output_dir='results'):
             ppl_benchmarks.append(bname)
 
     has_lambada = any('lambada' in data[m] for m in modes)
+    has_hellaswag = any('hellaswag' in data[m] for m in modes)
 
-    n_plots = len(ppl_benchmarks) + (1 if has_lambada else 0)
+    n_plots = len(ppl_benchmarks) + (1 if has_lambada else 0) + (1 if has_hellaswag else 0)
     if n_plots == 0:
         print("No benchmark data to plot.")
         return
@@ -775,6 +776,7 @@ def plot_benchmarks(benchmark_path, output_dir='results'):
         'wikitext-103': 'WikiText-103 Perplexity',
         'ptb': 'PTB Perplexity',
         'lambada': 'LAMBADA',
+        'hellaswag': 'HellaSwag',
     }
 
     plot_idx = 0
@@ -871,6 +873,52 @@ def plot_benchmarks(benchmark_path, output_dir='results'):
         ax.set_ylabel('Accuracy (%)', fontsize=10)
         ax.set_title('LAMBADA Last-Word Accuracy', fontsize=12, fontweight='bold')
         ax.grid(True, axis='y', alpha=0.3)
+        plot_idx += 1
+
+    # HellaSwag: accuracy bars
+    if has_hellaswag:
+        ax = axes[plot_idx]
+        x = np.arange(len(modes))
+        accs = []
+        for m in modes:
+            if 'hellaswag' in data[m]:
+                accs.append(data[m]['hellaswag']['accuracy'])
+            else:
+                accs.append(0)
+
+        bars = ax.bar(x, accs, 0.55, color=colors, edgecolor='white', linewidth=1.5)
+
+        valid_accs = [a for a in accs if a > 0]
+        if valid_accs:
+            min_val = min(valid_accs)
+            max_val = max(valid_accs)
+            rng = max_val - min_val
+            if rng > 0:
+                margin = rng * 0.15
+                y_bottom = max(0, min_val - margin * 2)
+                ax.set_ylim(bottom=y_bottom, top=min(100, max_val + margin * 3))
+            else:
+                y_bottom = max(0, min_val * 0.9)
+                ax.set_ylim(bottom=y_bottom, top=min(100, max_val * 1.1))
+
+            for bar, v in zip(bars, accs):
+                if v > 0:
+                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                            f'{v:.1f}%', ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+            if y_bottom > 0:
+                ax.text(0.02, 0.02, f'y starts at {y_bottom:.1f}%',
+                        transform=ax.transAxes, fontsize=7, color='gray', style='italic')
+
+            best_idx = np.argmax(accs)
+            bars[best_idx].set_edgecolor('#333')
+            bars[best_idx].set_linewidth(2.5)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, fontsize=9, rotation=15, ha='right')
+        ax.set_ylabel('Accuracy (%)', fontsize=10)
+        ax.set_title('HellaSwag Accuracy', fontsize=12, fontweight='bold')
+        ax.grid(True, axis='y', alpha=0.3)
 
     plt.tight_layout()
     path = os.path.join(output_dir, 'benchmark_comparison.png')
@@ -889,6 +937,10 @@ def plot_benchmarks(benchmark_path, output_dir='results'):
         for m in modes:
             if 'lambada' in data[m]:
                 all_metrics.setdefault(m, {})['LAMBADA\nAcc%'] = data[m]['lambada']['accuracy']
+    if has_hellaswag:
+        for m in modes:
+            if 'hellaswag' in data[m]:
+                all_metrics.setdefault(m, {})['HellaSwag\nAcc%'] = data[m]['hellaswag']['accuracy']
 
     if all_metrics:
         metric_names = list(next(iter(all_metrics.values())).keys())
