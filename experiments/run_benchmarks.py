@@ -160,12 +160,15 @@ def eval_perplexity(model, tokenizer, text, max_length=512, stride=256,
 
 
 @torch.no_grad()
-def eval_lambada(model, tokenizer, examples, device='cuda', max_examples=None):
-    """Evaluate LAMBADA: predict the last word of each passage."""
+def eval_lambada(model, tokenizer, examples, device='cuda', max_examples=None,
+                 save_predictions=None):
+    """Evaluate LAMBADA: predict the last word of each passage.
+    If save_predictions is a path prefix, saves per-example predictions."""
     correct = 0
     total = 0
     total_nll = 0.0
     total_tokens = 0
+    per_example = []
 
     n = len(examples)
     if max_examples:
@@ -203,14 +206,27 @@ def eval_lambada(model, tokenizer, examples, device='cuda', max_examples=None):
 
         # NLL for the last word
         loss = F.cross_entropy(pred_logits, target_ids, reduction='sum')
-        total_nll += loss.item()
+        nll_val = loss.item()
+        total_nll += nll_val
         total_tokens += n_last
 
         # Accuracy: check if greedy prediction matches
         pred_ids = pred_logits.argmax(dim=-1)
-        if torch.equal(pred_ids, target_ids):
+        is_correct = int(torch.equal(pred_ids, target_ids))
+        if is_correct:
             correct += 1
         total += 1
+
+        per_example.append({
+            'idx': i,
+            'correct': is_correct,
+            'nll': nll_val,
+            'n_last_tokens': n_last,
+            'ctx_len': len(ctx_ids),
+            'full_len': len(full_ids),
+            'last_word': last_word,
+            'text_char_len': len(text),
+        })
 
         if (i + 1) % 500 == 0:
             elapsed = time.time() - t0
@@ -224,6 +240,14 @@ def eval_lambada(model, tokenizer, examples, device='cuda', max_examples=None):
 
     print(f"  Done in {elapsed:.1f}s. Accuracy={accuracy:.2f}%, PPL={ppl:.2f}")
 
+    if save_predictions and per_example:
+        pred_path = save_predictions + '_lambada_predictions.json'
+        with open(pred_path, 'w') as f:
+            json.dump(per_example, f)
+        corr_path = save_predictions + '_lambada_correct.npy'
+        np.save(corr_path, np.array([e['correct'] for e in per_example]))
+        print(f"  Saved {len(per_example)} predictions to {pred_path}")
+
     return {
         'accuracy': accuracy,
         'correct': correct,
@@ -235,10 +259,13 @@ def eval_lambada(model, tokenizer, examples, device='cuda', max_examples=None):
 
 
 @torch.no_grad()
-def eval_hellaswag(model, tokenizer, examples, device='cuda', max_examples=None):
-    """Evaluate HellaSwag: pick the most likely ending (4-choice)."""
+def eval_hellaswag(model, tokenizer, examples, device='cuda', max_examples=None,
+                   save_predictions=None):
+    """Evaluate HellaSwag: pick the most likely ending (4-choice).
+    If save_predictions is a path prefix, saves per-example predictions."""
     correct = 0
     total = 0
+    per_example = []
 
     n = len(examples)
     if max_examples:
@@ -257,6 +284,7 @@ def eval_hellaswag(model, tokenizer, examples, device='cuda', max_examples=None)
 
         best_score = float('-inf')
         best_idx = 0
+        scores = []
 
         for j, ending in enumerate(endings):
             full_text = ctx + ' ' + ending
@@ -273,6 +301,7 @@ def eval_hellaswag(model, tokenizer, examples, device='cuda', max_examples=None)
 
             n_end = min(len(end_logits), len(end_targets))
             if n_end == 0:
+                scores.append(float('-inf'))
                 continue
             end_logits = end_logits[:n_end]
             end_targets = end_targets[:n_end]
@@ -280,13 +309,25 @@ def eval_hellaswag(model, tokenizer, examples, device='cuda', max_examples=None)
             nll = F.cross_entropy(end_logits, end_targets, reduction='sum').item()
             score = -nll / n_end  # length-normalized
 
+            scores.append(score)
             if score > best_score:
                 best_score = score
                 best_idx = j
 
-        if best_idx == label:
+        is_correct = int(best_idx == label)
+        if is_correct:
             correct += 1
         total += 1
+
+        per_example.append({
+            'idx': i,
+            'correct': is_correct,
+            'predicted': best_idx,
+            'label': label,
+            'scores': scores,
+            'ctx_len': ctx_len,
+            'activity_label': examples[i].get('activity_label', ''),
+        })
 
         if (i + 1) % 500 == 0:
             elapsed = time.time() - t0
@@ -297,6 +338,14 @@ def eval_hellaswag(model, tokenizer, examples, device='cuda', max_examples=None)
     accuracy = correct / total * 100 if total > 0 else 0
 
     print(f"  Done in {elapsed:.1f}s. Accuracy={accuracy:.2f}% ({correct}/{total})")
+
+    if save_predictions and per_example:
+        pred_path = save_predictions + '_hellaswag_predictions.json'
+        with open(pred_path, 'w') as f:
+            json.dump(per_example, f)
+        corr_path = save_predictions + '_hellaswag_correct.npy'
+        np.save(corr_path, np.array([e['correct'] for e in per_example]))
+        print(f"  Saved {len(per_example)} predictions to {pred_path}")
 
     return {
         'accuracy': accuracy,
@@ -386,6 +435,8 @@ def main():
                         help='Max LAMBADA examples (None=all)')
     parser.add_argument('--max_hellaswag', type=int, default=None,
                         help='Max HellaSwag examples (None=all)')
+    parser.add_argument('--save_predictions', action='store_true',
+                        help='Save per-example predictions for statistical tests')
     args = parser.parse_args()
 
     benchmarks = [b.strip() for b in args.benchmarks.split(',')]
@@ -422,6 +473,9 @@ def main():
                 args.finetune = False
 
     results = {}
+
+    out_dir = os.path.join(os.path.dirname(__file__), '..', 'results')
+    os.makedirs(out_dir, exist_ok=True)
 
     for mode in modes:
         print(f"\n{'='*70}")
@@ -467,14 +521,18 @@ def main():
                     device=args.device, max_tokens=args.max_tokens,
                 )
             elif bd['type'] == 'lambada':
+                pred_prefix = os.path.join(out_dir, mode) if args.save_predictions else None
                 result = eval_lambada(
                     model, tokenizer, bd['examples'],
                     device=args.device, max_examples=args.max_lambada,
+                    save_predictions=pred_prefix,
                 )
             elif bd['type'] == 'hellaswag':
+                pred_prefix = os.path.join(out_dir, mode) if args.save_predictions else None
                 result = eval_hellaswag(
                     model, tokenizer, bd['examples'],
                     device=args.device, max_examples=args.max_hellaswag,
+                    save_predictions=pred_prefix,
                 )
 
             mode_results[bname] = result
@@ -485,8 +543,6 @@ def main():
         torch.cuda.empty_cache()
 
     # Save results
-    out_dir = os.path.join(os.path.dirname(__file__), '..', 'results')
-    os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, 'benchmark_results.json')
     with open(out_path, 'w') as f:
         json.dump(results, f, indent=2, default=str)
