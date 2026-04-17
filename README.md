@@ -13,6 +13,7 @@ Three model variants are compared:
 | **Vanilla Transformer** | Standard multi-head self-attention (baseline) |
 | **Hopfield Attention** | Replace attention with multi-step Hopfield retrieval (T=3 iterations) |
 | **Hopfield + Memory** | Standard attention + learnable associative memory bank via Hopfield |
+| **Gated Hopfield** | Learnable blend of original softmax + Hopfield attention via sigmoid gate |
 
 ### Core Idea
 
@@ -31,6 +32,7 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 - **Multi-step Hopfield Attention** — iterative convergence to energy minima for sharper retrieval
 - **Learnable $\beta$** — adaptive sharpness per layer
 - **Associative Memory Bank** — external learnable memory patterns for persistent content-addressable storage
+- **Gated Attention Blending** — learnable sigmoid gate: $\text{output} = (1-g) \cdot \text{softmax\_attn} + g \cdot \text{hopfield\_attn}$, initialized at $g=0.5$
 - **Energy Regularization** — Hopfield energy as auxiliary loss to encourage well-formed retrievals
 
 ---
@@ -208,19 +210,29 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 
 ### Results
 
-| Mode | WikiText-103 PPL | LAMBADA Acc | LAMBADA PPL | HellaSwag Acc | Speed |
-|------|-----------------|-------------|-------------|---------------|-------|
-| Original (baseline) | 22.41 | **40.00%** | **12.76** | 44.71% | 8,330 t/s |
-| **Hopfield Attention (T=3)** | **17.18** | 24.02% | 60.45 | 45.60% | 8,435 t/s |
-| **Hopfield + Memory (64 mem)** | 18.58 | 24.80% | 71.30 | **45.87%** | 8,297 t/s |
+| Mode | WikiText-103 PPL | LAMBADA Acc | LAMBADA PPL | HellaSwag Acc | New Params |
+|------|-----------------|-------------|-------------|---------------|------------|
+| Original (baseline) | 22.41 | **40.00%** | **12.76** | 44.71% | 0 |
+| Hopfield Attention (T=3) | **17.18** | 21.13% | 66.44 | 44.94% | 4 |
+| Hopfield + Memory (64 mem) | 18.58 | 27.56% | 40.52 | 46.22% | 8.7M |
+| **Gated Hopfield (T=3)** | — | 30.12% | 27.00 | **46.82%** | 8 |
+
+### Statistical Significance (vs Original)
+
+| Mode | HellaSwag z-test | HellaSwag McNemar | LAMBADA z-test | LAMBADA McNemar |
+|------|-----------------|-------------------|----------------|-----------------|
+| Hopfield | p=0.744 n.s. | p=0.597 n.s. | p<0.001 *** | p<0.001 *** |
+| Augmented | p=0.032 * | p<0.001 *** | p<0.001 *** | p<0.001 *** |
+| **Gated** | **p=0.003 ****| **p<0.001 **** | p<0.001 *** | p<0.001 *** |
 
 ### Key Observations
 
-- **Hopfield Attention achieves 23% lower WikiText-103 perplexity** (17.18 vs 22.41) — the iterative attention refinement improves general language modeling
-- **Trade-off on LAMBADA**: original model retains better last-word prediction accuracy (40% vs 24%), suggesting Hopfield iterations may over-smooth token-level predictions
-- **HellaSwag confirms Hopfield gains**: both Hopfield variants outperform the baseline (45.60% and 45.87% vs 44.71%), showing that multi-step attention refinement helps commonsense reasoning where choosing among candidates benefits from smoother, more holistic attention patterns
-- **Augmented mode leads on HellaSwag** (45.87%) — the associative memory bank provides additional context for commonsense reasoning tasks
-- **No speed penalty**: all three variants run at ~8,300 t/s, confirming Hopfield iterations add negligible overhead on last-4-layer patching
+- **Gated Hopfield achieves the best HellaSwag accuracy** (46.82%, +2.11% over baseline, p=0.003 **) — the learnable gate allows the model to optimally blend original and Hopfield attention per-layer
+- **Gated mode minimizes LAMBADA degradation** among Hopfield variants: 30.12% vs 21.13% (pure Hopfield) and 27.56% (augmented) — the gate learns to preserve more of the original attention for precise token prediction
+- **Hopfield Attention achieves 23% lower WikiText-103 perplexity** (17.18 vs 22.41) — iterative attention refinement improves general language modeling
+- **HellaSwag improvements are statistically significant** for augmented (McNemar p<0.001) and gated (McNemar p<0.001), but NOT for pure Hopfield (p=0.597)
+- **LAMBADA degradation is significant for all variants** (all p<0.001) — multi-step Hopfield iterations over-smooth token-level predictions, though gating substantially mitigates this
+- **Effect sizes**: HellaSwag improvements are negligible (Cohen's h < 0.05); LAMBADA degradation is small (h = -0.21 to -0.41)
 
 ![Benchmark Comparison](results/benchmark_comparison.png)
 ![Benchmark Summary](results/benchmark_summary.png)
@@ -236,7 +248,7 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 5. **WikiText-2 confirms real-text gains**: augmented model achieves 0.036 BPC vs 1.48 BPC for vanilla — a 40x improvement
 6. **Memory bank adds ~25% parameters** but delivers disproportionate gains, especially on tasks with learnable patterns
 7. **Pretrained model patching works**: Hopfield attention on last 4 layers of Qwen3-0.6B reduces perplexity from 359 to 130 with only 4.22% parameter fine-tuning; full-layer augmented mode achieves PPL 114 (3.1x improvement)
-8. **Public benchmarks show nuanced trade-offs**: Hopfield Attention achieves 23% lower WikiText-103 perplexity (17.18 vs 22.41) and +0.9% HellaSwag accuracy (45.60% vs 44.71%), but at the cost of LAMBADA last-word prediction (24% vs 40%) — Hopfield smoothing helps holistic reasoning but hurts precise token prediction
+8. **Gated Hopfield is the best variant**: learnable sigmoid gate blending original + Hopfield attention achieves the strongest HellaSwag gain (+2.11%, p=0.003) while minimizing LAMBADA degradation (30% vs 21% for pure Hopfield). Statistical tests confirm HellaSwag improvements are significant for gated and augmented modes (McNemar p<0.001), but not for pure Hopfield (p=0.597)
 
 ## Project Structure
 
@@ -252,7 +264,9 @@ which is exactly the attention operation when $T=1$. We extend this to $T>1$ ste
 │   ├── run_scaling.py          # Scaling: d_model=64,128,256,512
 │   ├── run_wikitext.py         # WikiText-2 real text experiment
 │   ├── run_pretrained.py       # Pretrained model benchmark (Qwen3-0.6B)
-│   └── run_benchmarks.py       # Public benchmarks (WikiText-103, LAMBADA, HellaSwag)
+│   ├── run_benchmarks.py       # Public benchmarks (WikiText-103, LAMBADA, HellaSwag)
+│   ├── statistical_tests.py    # Statistical significance (Wilson CI, z-test, bootstrap, McNemar)
+│   └── lambada_analysis.py     # LAMBADA degradation analysis (transition matrices, NLL)
 ├── scripts/
 │   └── plot_results.py         # Visualization (curves, bars, ablation, scaling)
 ├── smoke_test.py               # Quick sanity check

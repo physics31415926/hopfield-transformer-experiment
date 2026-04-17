@@ -23,12 +23,7 @@
     "mode": "hopfield",
     "params": 596049924,
     "new_params": 4,
-    "patch_layers": [
-      24,
-      25,
-      26,
-      27
-    ],
+    "patch_layers": [24, 25, 26, 27],
     "lambada": {
       "accuracy": 21.13332039588589,
       "correct": 1089,
@@ -48,12 +43,7 @@
     "mode": "augmented",
     "params": 604717060,
     "new_params": 8667140,
-    "patch_layers": [
-      24,
-      25,
-      26,
-      27
-    ],
+    "patch_layers": [24, 25, 26, 27],
     "lambada": {
       "accuracy": 27.55676305065011,
       "correct": 1420,
@@ -67,6 +57,26 @@
       "correct": 4641,
       "total": 10042,
       "time": 1285.966388463974
+    }
+  },
+  "gated": {
+    "mode": "gated",
+    "params": 596049928,
+    "new_params": 8,
+    "patch_layers": [24, 25, 26, 27],
+    "lambada": {
+      "accuracy": 30.11837764409082,
+      "correct": 1552,
+      "total": 5153,
+      "perplexity": 27.00418987199729,
+      "avg_nll": 3.2959920344094336,
+      "time": 178.36506581306458
+    },
+    "hellaswag": {
+      "accuracy": 46.82334196375224,
+      "correct": 4702,
+      "total": 10042,
+      "time": 1403.7857601642609
     }
   }
 }

@@ -72,7 +72,7 @@ def analyze_aggregate(results_path):
     with open(results_path) as f:
         data = json.load(f)
 
-    modes = ['original', 'hopfield', 'augmented']
+    modes = ['original', 'hopfield', 'augmented', 'gated']
     benchmarks = ['hellaswag', 'lambada']
 
     print("=" * 70)
@@ -90,7 +90,7 @@ def analyze_aggregate(results_path):
         # 1. Confidence intervals
         print(f"\n  95% Wilson Score Confidence Intervals:")
         for m in modes:
-            if bench not in data[m]:
+            if m not in data or bench not in data[m]:
                 continue
             c = data[m][bench]['correct']
             n = data[m][bench]['total']
@@ -102,8 +102,8 @@ def analyze_aggregate(results_path):
         print(f"\n  Two-Proportion Z-Tests (vs original):")
         c_orig = data['original'][bench]['correct']
         n_orig = data['original'][bench]['total']
-        for m in ['hopfield', 'augmented']:
-            if bench not in data[m]:
+        for m in ['hopfield', 'augmented', 'gated']:
+            if m not in data or bench not in data[m]:
                 continue
             c_m = data[m][bench]['correct']
             n_m = data[m][bench]['total']
@@ -112,16 +112,19 @@ def analyze_aggregate(results_path):
             sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "n.s."
             print(f"    {m:12s} vs original: diff={diff:+.2f}%  z={z:.3f}  p={p:.4f}  {sig}")
 
-        # 3. Hopfield vs augmented
-        if all(bench in data[m] for m in ['hopfield', 'augmented']):
-            c_h = data['hopfield'][bench]['correct']
-            n_h = data['hopfield'][bench]['total']
-            c_a = data['augmented'][bench]['correct']
-            n_a = data['augmented'][bench]['total']
-            z, p = two_proportion_ztest(c_a, n_a, c_h, n_h)
-            diff = c_a / n_a * 100 - c_h / n_h * 100
+        # 3. Pairwise comparisons between variants
+        pairs = [('augmented', 'hopfield'), ('gated', 'hopfield'), ('gated', 'augmented')]
+        for m_a, m_b in pairs:
+            if not all(m in data and bench in data[m] for m in [m_a, m_b]):
+                continue
+            c_a = data[m_a][bench]['correct']
+            n_a = data[m_a][bench]['total']
+            c_b = data[m_b][bench]['correct']
+            n_b = data[m_b][bench]['total']
+            z, p = two_proportion_ztest(c_a, n_a, c_b, n_b)
+            diff = c_a / n_a * 100 - c_b / n_b * 100
             sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "n.s."
-            print(f"    {'augmented':12s} vs hopfield: diff={diff:+.2f}%  z={z:.3f}  p={p:.4f}  {sig}")
+            print(f"    {m_a:12s} vs {m_b:10s}: diff={diff:+.2f}%  z={z:.3f}  p={p:.4f}  {sig}")
 
     # Effect sizes (Cohen's h)
     print(f"\n{'─' * 70}")
@@ -131,8 +134,8 @@ def analyze_aggregate(results_path):
         if bench not in data.get('original', {}):
             continue
         p_orig = data['original'][bench]['correct'] / data['original'][bench]['total']
-        for m in ['hopfield', 'augmented']:
-            if bench not in data[m]:
+        for m in ['hopfield', 'augmented', 'gated']:
+            if m not in data or bench not in data[m]:
                 continue
             p_m = data[m][bench]['correct'] / data[m][bench]['total']
             h = 2 * (math.asin(math.sqrt(p_m)) - math.asin(math.sqrt(p_orig)))
@@ -144,7 +147,7 @@ def analyze_aggregate(results_path):
 
 def analyze_paired(predictions_dir):
     """Analyze with per-example predictions (paired tests)."""
-    modes = ['original', 'hopfield', 'augmented']
+    modes = ['original', 'hopfield', 'augmented', 'gated']
     benchmarks = ['hellaswag', 'lambada']
 
     print("=" * 70)
@@ -165,7 +168,7 @@ def analyze_paired(predictions_dir):
         print(f"  {bench.upper()} (Paired Tests)")
         print(f"{'─' * 70}")
 
-        for m in ['hopfield', 'augmented']:
+        for m in ['hopfield', 'augmented', 'gated']:
             if m not in preds:
                 continue
 
@@ -198,8 +201,8 @@ def save_summary(results_path, output_path):
             'accuracy': c_orig / n_orig,
             'ci_95': [lo, hi]
         }
-        for m in ['hopfield', 'augmented']:
-            if bench not in data[m]:
+        for m in ['hopfield', 'augmented', 'gated']:
+            if m not in data or bench not in data[m]:
                 continue
             c_m = data[m][bench]['correct']
             n_m = data[m][bench]['total']

@@ -6,13 +6,14 @@
 
 ## 架构
 
-对比三种模型变体：
+对比四种模型变体：
 
 | 变体 | 描述 |
 |------|------|
 | **标准 Transformer** | 标准多头自注意力（基线） |
 | **Hopfield 注意力** | 用多步 Hopfield 检索替换注意力（T=3 次迭代） |
 | **Hopfield + 记忆库** | 标准注意力 + 基于 Hopfield 的可学习联想记忆库 |
+| **门控 Hopfield** | 通过 sigmoid 门控可学习地混合原始 softmax 与 Hopfield 注意力 |
 
 ### 核心思想
 
@@ -31,6 +32,7 @@ $$\xi^{new} = X \cdot \text{softmax}(\beta X^\top \xi)$$
 - **多步 Hopfield 注意力** — 迭代收敛到能量极小值，实现更精确的检索
 - **可学习 $\beta$** — 每层自适应锐度
 - **联想记忆库** — 外部可学习记忆模式，提供持久的内容寻址存储
+- **门控注意力混合** — 可学习 sigmoid 门控：$\text{output} = (1-g) \cdot \text{softmax\_attn} + g \cdot \text{hopfield\_attn}$，初始化 $g=0.5$
 - **能量正则化** — 将 Hopfield 能量作为辅助损失，鼓励良好的检索模式
 
 ---
@@ -196,7 +198,7 @@ $$\xi^{new} = X \cdot \text{softmax}(\beta X^\top \xi)$$
 
 ## 实验 8：公开基准测试 — WikiText-103、LAMBADA & HellaSwag
 
-> 在标准公开 NLP 基准上评估三种变体。
+> 在标准公开 NLP 基准上评估四种变体。
 > WikiText-103 测试通用语言建模困惑度；LAMBADA 通过末词预测测试长程依赖能力；HellaSwag 通过 4 选 1 句子补全测试常识推理能力。
 
 ### 实验设置
@@ -208,19 +210,29 @@ $$\xi^{new} = X \cdot \text{softmax}(\beta X^\top \xi)$$
 
 ### 结果
 
-| 模式 | WikiText-103 PPL | LAMBADA 准确率 | LAMBADA PPL | HellaSwag 准确率 | 速度 |
-|------|-----------------|---------------|-------------|-----------------|------|
-| 原始（基线） | 22.41 | **40.00%** | **12.76** | 44.71% | 8,330 t/s |
-| **Hopfield 注意力 (T=3)** | **17.18** | 24.02% | 60.45 | 45.60% | 8,435 t/s |
-| **Hopfield + 记忆库 (64 mem)** | 18.58 | 24.80% | 71.30 | **45.87%** | 8,297 t/s |
+| 模式 | WikiText-103 PPL | LAMBADA 准确率 | LAMBADA PPL | HellaSwag 准确率 | 新增参数 |
+|------|-----------------|---------------|-------------|-----------------|----------|
+| 原始（基线） | 22.41 | **40.00%** | **12.76** | 44.71% | 0 |
+| Hopfield 注意力 (T=3) | **17.18** | 21.13% | 66.44 | 44.94% | 4 |
+| Hopfield + 记忆库 (64 mem) | 18.58 | 27.56% | 40.52 | 46.22% | 8.7M |
+| **门控 Hopfield (T=3)** | — | 30.12% | 27.00 | **46.82%** | 8 |
+
+### 统计显著性（vs 原始模型）
+
+| 模式 | HellaSwag z 检验 | HellaSwag McNemar | LAMBADA z 检验 | LAMBADA McNemar |
+|------|-----------------|-------------------|----------------|-----------------|
+| Hopfield | p=0.744 n.s. | p=0.597 n.s. | p<0.001 *** | p<0.001 *** |
+| 增强 | p=0.032 * | p<0.001 *** | p<0.001 *** | p<0.001 *** |
+| **门控** | **p=0.003 **** | **p<0.001 **** | p<0.001 *** | p<0.001 *** |
 
 ### 关键观察
 
+- **门控 Hopfield 取得最佳 HellaSwag 准确率**（46.82%，比基线高 +2.11%，p=0.003 **）— 可学习门控允许模型在每层最优地混合原始和 Hopfield 注意力
+- **门控模式最小化 LAMBADA 退化**：30.12% vs 21.13%（纯 Hopfield）和 27.56%（增强）— 门控学会为精确 token 预测保留更多原始注意力
 - **Hopfield 注意力 WikiText-103 困惑度降低 23%**（17.18 vs 22.41）— 迭代注意力优化改善了通用语言建模
-- **LAMBADA 上存在权衡**：原始模型保持更好的末词预测准确率（40% vs 24%），表明 Hopfield 迭代可能过度平滑了 token 级预测
-- **HellaSwag 验证 Hopfield 增益**：两种 Hopfield 变体均优于基线（45.60% 和 45.87% vs 44.71%），表明多步注意力优化有助于常识推理，在候选项选择中受益于更平滑、更全局的注意力模式
-- **增强模式在 HellaSwag 上领先**（45.87%）— 联想记忆库为常识推理任务提供了额外上下文
-- **无速度损失**：三种变体均以 ~8,300 t/s 运行，确认最后 4 层替换的 Hopfield 迭代开销可忽略
+- **HellaSwag 改进具有统计显著性**：增强模式（McNemar p<0.001）和门控模式（McNemar p<0.001）显著，但纯 Hopfield 不显著（p=0.597）
+- **所有变体的 LAMBADA 退化均显著**（均 p<0.001）— 多步 Hopfield 迭代过度平滑 token 级预测，但门控机制大幅缓解了这一问题
+- **效应量**：HellaSwag 改进可忽略（Cohen's h < 0.05）；LAMBADA 退化为小效应（h = -0.21 至 -0.41）
 
 ![基准对比](results/benchmark_comparison.png)
 ![基准总结](results/benchmark_summary.png)
@@ -236,7 +248,7 @@ $$\xi^{new} = X \cdot \text{softmax}(\beta X^\top \xi)$$
 5. **WikiText-2 验证真实文本增益**：增强模型 BPC 0.036 vs 标准 1.48 — 40 倍改进
 6. **记忆库增加约 25% 参数**但带来不成比例的增益，尤其在具有可学习模式的任务上
 7. **预训练模型替换有效**：Qwen3-0.6B 最后 4 层 Hopfield 注意力将困惑度从 359 降至 130，仅微调 4.22% 参数；全层增强模式达到 PPL 114（3.1 倍提升）
-8. **公开基准展现细致权衡**：Hopfield 注意力 WikiText-103 困惑度降低 23%（17.18 vs 22.41），HellaSwag 准确率提升 +0.9%（45.60% vs 44.71%），但 LAMBADA 末词预测有所下降（24% vs 40%）— Hopfield 平滑有助于整体推理但影响精确 token 预测
+8. **门控 Hopfield 是最佳变体**：可学习 sigmoid 门控混合原始 + Hopfield 注意力，取得最强 HellaSwag 增益（+2.11%，p=0.003），同时最小化 LAMBADA 退化（30% vs 纯 Hopfield 的 21%）。统计检验确认门控和增强模式的 HellaSwag 改进显著（McNemar p<0.001），但纯 Hopfield 不显著（p=0.597）
 
 ## 项目结构
 
@@ -252,7 +264,9 @@ $$\xi^{new} = X \cdot \text{softmax}(\beta X^\top \xi)$$
 │   ├── run_scaling.py          # 缩放：d_model=64,128,256,512
 │   ├── run_wikitext.py         # WikiText-2 真实文本实验
 │   ├── run_pretrained.py       # 预训练模型基准测试（Qwen3-0.6B）
-│   └── run_benchmarks.py       # 公开基准测试（WikiText-103, LAMBADA, HellaSwag）
+│   ├── run_benchmarks.py       # 公开基准测试（WikiText-103, LAMBADA, HellaSwag）
+│   ├── statistical_tests.py    # 统计显著性检验（Wilson CI, z 检验, bootstrap, McNemar）
+│   └── lambada_analysis.py     # LAMBADA 退化分析（转移矩阵, NLL）
 ├── scripts/
 │   └── plot_results.py         # 可视化（曲线、柱状图、消融、缩放）
 ├── smoke_test.py               # 快速健全性检查
