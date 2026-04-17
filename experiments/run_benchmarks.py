@@ -437,6 +437,8 @@ def main():
                         help='Max HellaSwag examples (None=all)')
     parser.add_argument('--save_predictions', action='store_true',
                         help='Save per-example predictions for statistical tests')
+    parser.add_argument('--output_dir', type=str, default=None,
+                        help='Output directory for results (default: results/)')
     args = parser.parse_args()
 
     benchmarks = [b.strip() for b in args.benchmarks.split(',')]
@@ -474,7 +476,7 @@ def main():
 
     results = {}
 
-    out_dir = os.path.join(os.path.dirname(__file__), '..', 'results')
+    out_dir = args.output_dir or os.path.join(os.path.dirname(__file__), '..', 'results')
     os.makedirs(out_dir, exist_ok=True)
 
     for mode in modes:
