@@ -167,6 +167,108 @@ class HopfieldMemoryWrapper(nn.Module):
         return attn_output, attn_weights
 
 
+class GatedHopfieldAttentionWrapper(nn.Module):
+    """
+    Gated blend of original softmax attention and Hopfield multi-step attention.
+    gate = sigmoid(alpha) controls the mix: output = (1-g)*original + g*hopfield
+    Initialized with alpha=0 (gate=0.5), so starts as equal blend.
+    """
+
+    def __init__(self, original_attn, num_steps=3, beta_init=1.0):
+        super().__init__()
+        self.original = original_attn
+        self.num_steps = num_steps
+        self.log_beta = nn.Parameter(torch.tensor(math.log(beta_init)))
+        self.gate_alpha = nn.Parameter(torch.tensor(0.0))  # sigmoid(0)=0.5
+
+        self.config = original_attn.config
+        self.layer_idx = original_attn.layer_idx
+        self.head_dim = original_attn.head_dim
+        self.num_key_value_groups = original_attn.num_key_value_groups
+        self.scaling = original_attn.scaling
+        self.is_causal = original_attn.is_causal
+
+    @property
+    def beta(self):
+        return self.log_beta.exp()
+
+    @property
+    def gate(self):
+        return torch.sigmoid(self.gate_alpha)
+
+    def _repeat_kv(self, hidden_states, n_rep):
+        if n_rep == 1:
+            return hidden_states
+        B, num_kv_heads, L, D = hidden_states.shape
+        hidden_states = hidden_states[:, :, None, :, :].expand(B, num_kv_heads, n_rep, L, D)
+        return hidden_states.reshape(B, num_kv_heads * n_rep, L, D)
+
+    def _hopfield_attention(self, query, key, value, attention_mask=None):
+        beta = self.beta
+        scale = self.scaling
+        state = query
+        for t in range(self.num_steps):
+            scores = torch.matmul(state, key.transpose(-2, -1)) * scale * beta
+            if attention_mask is not None:
+                scores = scores + attention_mask
+            attn_weights = F.softmax(scores, dim=-1)
+            if t < self.num_steps - 1:
+                state = torch.matmul(attn_weights, key)
+            else:
+                state = torch.matmul(attn_weights, value)
+        return state, attn_weights
+
+    def _standard_attention(self, query, key, value, attention_mask=None):
+        scale = self.scaling
+        scores = torch.matmul(query, key.transpose(-2, -1)) * scale
+        if attention_mask is not None:
+            scores = scores + attention_mask
+        attn_weights = F.softmax(scores, dim=-1)
+        return torch.matmul(attn_weights, value), attn_weights
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        position_embeddings: tuple,
+        attention_mask: Optional[torch.Tensor] = None,
+        past_key_values=None,
+        cache_position=None,
+        **kwargs,
+    ):
+        orig = self.original
+        input_shape = hidden_states.shape[:-1]
+        hidden_shape = (*input_shape, -1, self.head_dim)
+
+        query_states = orig.q_norm(orig.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+        key_states = orig.k_norm(orig.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+        value_states = orig.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+
+        cos, sin = position_embeddings
+        from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
+        if past_key_values is not None:
+            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+            key_states, value_states = past_key_values.update(
+                key_states, value_states, self.layer_idx, cache_kwargs
+            )
+
+        key_states = self._repeat_kv(key_states, self.num_key_value_groups)
+        value_states = self._repeat_kv(value_states, self.num_key_value_groups)
+
+        # Both paths
+        orig_out, _ = self._standard_attention(query_states, key_states, value_states, attention_mask)
+        hopf_out, attn_weights = self._hopfield_attention(query_states, key_states, value_states, attention_mask)
+
+        # Gated blend
+        g = self.gate
+        attn_output = (1 - g) * orig_out + g * hopf_out
+
+        attn_output = attn_output.transpose(1, 2).reshape(*input_shape, -1).contiguous()
+        attn_output = orig.o_proj(attn_output)
+        return attn_output, attn_weights
+
+
 def patch_model_attention(model, mode='hopfield', num_steps=3,
                           num_memories=64, layers=None):
     """
@@ -223,6 +325,10 @@ def patch_model_attention(model, mode='hopfield', num_steps=3,
                 original_attn, d_model=d_model,
                 num_memories=num_memories, num_steps=num_steps
             ).to(device=target_device, dtype=target_dtype)
+        elif mode == 'gated':
+            new_attn = GatedHopfieldAttentionWrapper(
+                original_attn, num_steps=num_steps
+            ).to(device=target_device, dtype=target_dtype)
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
@@ -236,6 +342,6 @@ def count_new_parameters(model):
     """Count parameters added by Hopfield patching (non-original params)."""
     new_params = 0
     for name, param in model.named_parameters():
-        if 'log_beta' in name or 'memory_bank' in name:
+        if 'log_beta' in name or 'memory_bank' in name or 'gate_alpha' in name:
             new_params += param.numel()
     return new_params

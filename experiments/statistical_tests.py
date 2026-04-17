@@ -154,7 +154,7 @@ def analyze_paired(predictions_dir):
     for bench in benchmarks:
         preds = {}
         for m in modes:
-            path = os.path.join(predictions_dir, f'{m}_{bench}_predictions.npy')
+            path = os.path.join(predictions_dir, f'{m}_{bench}_correct.npy')
             if os.path.exists(path):
                 preds[m] = np.load(path)
 

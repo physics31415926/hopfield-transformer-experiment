@@ -4,26 +4,19 @@
     "params": 596049920,
     "new_params": 0,
     "patch_layers": [],
-    "wikitext-103": {
-      "perplexity": 22.40703562619394,
-      "avg_nll": 3.109375,
-      "tokens_evaluated": 297771,
-      "time": 35.74637794494629,
-      "tokens_per_sec": 8330.102715822091
-    },
     "lambada": {
       "accuracy": 39.99611876576751,
       "correct": 2061,
       "total": 5153,
       "perplexity": 12.756675296423591,
       "avg_nll": 2.5460546872592325,
-      "time": 155.05720114707947
+      "time": 157.03136801719666
     },
     "hellaswag": {
       "accuracy": 44.71220872336188,
       "correct": 4490,
       "total": 10042,
-      "time": 1416.0651443004608
+      "time": 1215.3493432998657
     }
   },
   "hopfield": {
@@ -36,26 +29,19 @@
       26,
       27
     ],
-    "wikitext-103": {
-      "perplexity": 17.180070153709277,
-      "avg_nll": 2.84375,
-      "tokens_evaluated": 297771,
-      "time": 35.300002336502075,
-      "tokens_per_sec": 8435.43853514392
-    },
     "lambada": {
-      "accuracy": 24.02483989908791,
-      "correct": 1238,
+      "accuracy": 21.13332039588589,
+      "correct": 1089,
       "total": 5153,
-      "perplexity": 60.446497723090495,
-      "avg_nll": 4.101758638626249,
-      "time": 159.71099519729614
+      "perplexity": 66.4413785078744,
+      "avg_nll": 4.1963200326917205,
+      "time": 161.80097103118896
     },
     "hellaswag": {
-      "accuracy": 45.59848635729934,
-      "correct": 4579,
+      "accuracy": 44.941246763592915,
+      "correct": 4513,
       "total": 10042,
-      "time": 1455.671142578125
+      "time": 1246.3331463336945
     }
   },
   "augmented": {
@@ -68,26 +54,19 @@
       26,
       27
     ],
-    "wikitext-103": {
-      "perplexity": 18.576084986220376,
-      "avg_nll": 2.921875,
-      "tokens_evaluated": 297771,
-      "time": 35.888507604599,
-      "tokens_per_sec": 8297.112916499253
-    },
     "lambada": {
-      "accuracy": 24.801086745585096,
-      "correct": 1278,
+      "accuracy": 27.55676305065011,
+      "correct": 1420,
       "total": 5153,
-      "perplexity": 71.30084213721412,
-      "avg_nll": 4.2669081385316225,
-      "time": 164.30338764190674
+      "perplexity": 40.5212212501807,
+      "avg_nll": 3.7018258183680732,
+      "time": 166.56060647964478
     },
     "hellaswag": {
-      "accuracy": 45.86735710017925,
-      "correct": 4606,
+      "accuracy": 46.2158932483569,
+      "correct": 4641,
       "total": 10042,
-      "time": 1475.9298226833344
+      "time": 1285.966388463974
     }
   }
 }
